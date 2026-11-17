@@ -261,3 +261,24 @@ def test_synthetic_detector_clips_bbox_at_frame_edge():
     assert d.w < 0.6 * full and d.h < 0.6 * full
     d2 = SyntheticDetector(CAM, SyntheticConfig(clip_to_frame=False, **cfg)).process(0.0, pos, own)[0]
     assert d2.w == pytest.approx(full)
+
+
+# ---------------- T9d: update goi nhanh hon detector khong lam mat ung vien bat lai ----------------
+def test_reacquire_works_when_update_runs_faster_than_detector():
+    """update 120 Hz, detector 30 Hz (3 goi trong 4 khong co phat hien). Mat 1 s roi bat lai:
+    ung vien tai bat khong duoc bi xoa boi cac goi rong; phai ve TRACK trong 0.5 s (khong cho 3 s)."""
+    rng = np.random.default_rng(5)
+    trk = SingleTargetTracker(CAM)
+    for k in range(60):
+        trk.update([static_det(k * DT, CAM.cx, CAM.cy, 30.0, rng)], own_at(k * DT), k * DT)
+    t_back = 59 * DT + 1.0
+    status_at = None
+    for i in range(int(3.0 * 120)):
+        t = 59 * DT + 0.2 + i / 120.0
+        dets = []
+        if t >= t_back and (i % 4) == 0:                      # detector 30 Hz sau khi quay lai
+            dets = [static_det(t, CAM.cx, CAM.cy, 30.0, rng)]
+        st = trk.update(dets, own_at(t), t)
+        if t >= t_back and st.status == TrackStatus.TRACK and status_at is None:
+            status_at = t - t_back
+    assert status_at is not None and status_at <= 0.5, status_at

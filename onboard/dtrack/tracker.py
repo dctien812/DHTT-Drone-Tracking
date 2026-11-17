@@ -272,7 +272,9 @@ class SingleTargetTracker:
                     self._apply(z, d.t_capture, d)
                     if not self._confirmed and self._hits >= cfg.confirm_hits:
                         self._confirmed = True
-        if not cands:
+        # update goi nhanh hon detector: goi khong co phat hien khong duoc xoa ung vien tai bat;
+        # chi het han khi qua coast_after_s (cung nghia "lien tiep" cua confirm_hits).
+        if not cands and self._pending is not None and t_now - self._pending[0] > cfg.coast_after_s:
             self._pending = None
 
         if self._x is not None and not self._state_finite():

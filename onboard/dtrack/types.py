@@ -73,9 +73,16 @@ class TrackState:
     los_ned: Optional[Vec3] = None        # vector don vi tu drone bam toi muc tieu
     los_rate_ned: Optional[Vec3] = None   # rad/s, toc do quay duong ngam
     range_m: Optional[float] = None       # khoang cach uoc luong
-    range_sigma_m: Optional[float] = None  # do bat dinh 1-sigma
+    # do bat dinh 1-sigma = sigma cua bo loc (du doan toi t) + size_rel_sigma * r. Khi mat do,
+    # sigma nay chi tang theo nhieu gia toc cua mo hinh (khong co nhay vot ro ret).
+    range_sigma_m: Optional[float] = None
     range_rate_mps: Optional[float] = None  # duong = dang xa ra
     # False khi khoang cach khong dang tin (bbox cham mep anh, chua hoi tu, dau vao hong).
+    # Dieu kien sigma/r cua range_valid dung sigma CUA BO LOC (khong gom size_rel_sigma) tai mau
+    # do cuoi, KHONG dung range_sigma_m cong bo o tren; vi sigma cong bo khong tang khi mat do
+    # (ngoai phan du doan) nen khong dung no de suy ra do hoi tu. Mat do > max_update_age_s,
+    # bbox cach mep anh <= edge_margin_px, hoac mat do lau roi bat lai (loc khoi tao lai) deu
+    # lam range_valid = False.
     # Khoi dan duong KHONG duoc tien lai gan muc tieu khi range_valid = False.
     range_valid: bool = False
     # Tam du doan cho khung ke (de crop). Co the nam NGOAI khung: noi dung phai tu kep.

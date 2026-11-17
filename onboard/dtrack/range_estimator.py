@@ -40,7 +40,9 @@ class RangeConfig:
     innov_gate_sigma: float = 5.0      # sigma, vuot thi bo mau do (outlier)
     max_rejects: int = 15              # so mau bi bo lien tiep thi khoi tao lai loc
     size_rel_sigma: float = 0.25       # ty le, bat dinh kich thuoc that (cong vao sigma bao cao)
-    edge_margin_px: float = 2.0        # px, canh bbox cach mep anh <= gia tri nay thi coi la bi cat
+    # px, canh bbox cach mep anh <= gia tri nay thi coi la bi cat. Phai >= muc detector co khung
+    # vao trong mep (quan sat 3-8 px), neu khong bbox bi cat nhe van duoc dung va bao xa hon that.
+    edge_margin_px: float = 10.0
     min_updates_valid: int = 8         # so lan cap nhat toi thieu sau khi khoi tao de range_valid
     max_rel_sigma_valid: float = 0.2   # sigma_loc / r toi da de range_valid (khong tinh size_rel_sigma)
     max_update_age_s: float = 0.5      # s, mau do cuoi cu hon nguong nay -> range_valid = False
@@ -155,6 +157,12 @@ class RangeEstimator:
             self._t = t
             self._n_upd = 1
             return True
+        if t - self._t > c.max_update_age_s:
+            # Mat do qua lau: P da phinh ra theo r du doan (xa), nen mau moi (gan hon nhieu) bi
+            # tru trong so nho va loc ket o khoang cach cu. Bat dau lai tu mau nay (range_valid
+            # False cho toi khi du min_updates_valid).
+            self.reset()
+            return self.update(t, w, h, cx, cy)
         x, P = self._predict(self._x, self._P, t - self._t)
         # sigma do tinh theo khoang cach DU DOAN (khong theo r_m nhieu) de tranh lech.
         sr = self._sigma_r(max(x[0], c.target_size_m), s_sig)
