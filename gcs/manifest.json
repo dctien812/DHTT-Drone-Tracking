@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "generated": "2026-11-16",
+  "note": "verified=true nghia la URL/ID da duoc xac minh ngay 2026-11-16 (xem README muc 6). verified=false: Install-Gcs chi cai khi co -AllowUnverified. Get-GcsPackages.ps1 -CheckOnly kiem lai URL con song. Install-Gcs chi chay .msi/.exe khi SHA256 khop VA chu ky so Authenticode hop le, khop ban ghi luc tai; expectedPublisher = mang mau subject nguoi ky (wildcard, vd *O=Ten Nha Phat Hanh*): CO gia tri thi nguoi ky khong khop se DUNG, RONG thi Install hoi xac nhan tung goi (hoac -AllowUnsigned <id goi>). Dien expectedPublisher SAU KHI xem chu ky that Get-GcsPackages.ps1 in ra; KHONG doan ten.",
+  "packages": [
+    {
+      "id": "missionplanner-msi",
+      "expectedPublisher": [],
+      "name": "Mission Planner (MSI)",
+      "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/MissionPlanner-latest.msi",
+      "file": "MissionPlanner-latest.msi",
+      "required": true,
+      "verified": true,
+      "install": "msi",
+      "notes": "Ban 1.3.83, ~114 MB. Cai im lang msiexec /qn co gioi han thoi gian (-SilentTimeoutMinutes, mac dinh 20; CHUA ai thu), qua han thi chuyen /passive. Thu muc mac dinh C:\\Program Files (x86)\\Mission Planner. Trang thai chu ky so that cua MSI nay CHUA kiem."
+    },
+    {
+      "id": "missionplanner-zip",
+      "expectedPublisher": [],
+      "name": "Mission Planner (ZIP, du phong)",
+      "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/MissionPlanner-latest.zip",
+      "file": "MissionPlanner-latest.zip",
+      "required": false,
+      "verified": true,
+      "install": "zip",
+      "notes": "~111 MB. Dung voi Install-Gcs.ps1 -UseZip: giai nen vao C:\\GCS\\MissionPlanner, chay MissionPlanner.exe. ZIP khong co chu ky so (signed=false), chi co SHA256."
+    },
+    {
+      "id": "mavproxy",
+      "expectedPublisher": [],
+      "name": "MAVProxy (Windows)",
+      "url": "https://firmware.ardupilot.org/Tools/MAVProxy/MAVProxySetup-latest.exe",
+      "file": "MAVProxySetup-latest.exe",
+      "required": false,
+      "verified": true,
+      "install": "exe-interactive",
+      "notes": "~370 MB. HEAD toi URL https tra 200 ngay 2026-11-16 (Get-GcsPackages.ps1 -CheckOnly). Co cai im lang CHUA biet -> cai tuong tac. Chi cai khi chu ky so hop le (hoac -AllowUnsigned); SHA256 cung USB chi chong hong file, khong chong thay file."
+    },
+    {
+      "id": "qgroundcontrol-daily",
+      "expectedPublisher": [],
+      "name": "QGroundControl (DAILY build, du phong)",
+      "url": "https://d176tv9ibo4jno.cloudfront.net/builds/master/QGroundControl-installer-AMD64.exe",
+      "file": "QGroundControl-installer-AMD64.exe",
+      "required": false,
+      "verified": true,
+      "daily": true,
+      "install": "exe-interactive",
+      "notes": "BAN DAILY (master), KHONG DUNG DE BAY. Chi la du phong de xem/tap. Cai tuong tac. Chi cai khi chu ky so hop le (hoac -AllowUnsigned)."
+    },
+    {
+      "id": "tailscale",
+      "expectedPublisher": [],
+      "name": "Tailscale",
+      "winget": "Tailscale.Tailscale",
+      "required": false,
+      "verified": true,
+      "install": "winget",
+      "notes": "Chi khi may co Internet. Can dang nhap tay sau khi cai. Luu y: mang lop phu lo luong MAVLink (khong xac thuc) cho moi may trong mang do - khong bat khi bay (README muc 3.6)."
+    },
+    {
+      "id": "zadig",
+      "expectedPublisher": [],
+      "name": "Zadig (driver USB)",
+      "winget": "akeo.ie.Zadig",
+      "required": false,
+      "verified": false,
+      "install": "winget",
+      "notes": "ID winget CHUA xac minh. Chi cai khi co -AllowUnverified. Chi khi may co Internet."
+    },
+    {
+      "id": "zerotier",
+      "expectedPublisher": [],
+      "name": "ZeroTier One",
+      "winget": "ZeroTier.ZeroTierOne",
+      "required": false,
+      "verified": false,
+      "install": "winget",
+      "notes": "ID winget CHUA xac minh. Chi cai khi co -AllowUnverified. Chi khi may co Internet. Mang lop phu lo luong MAVLink cho moi may trong mang do (README muc 3.6)."
+    }
+  ]
+}

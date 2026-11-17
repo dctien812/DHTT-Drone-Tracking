@@ -1,0 +1,14 @@
+# Tham so ghi de cho SITL chase (nap sau copter.parm). Ten da doi chieu voi ArduPilot Copter-4.7.2.
+# Cho phep bay nhanh hon 20 m/s trong GUIDED:
+# WP_SPD: tran toc do ngang cua guided/pos control (libraries/AC_WPNav/AC_WPNav.cpp:56, m/s).
+#   Khoang @Range ghi 0.1-20 chi la goi y cho GCS, khong bi ep trong firmware.
+WP_SPD 30
+# WP_ACC: gia toc ngang toi da (AC_WPNav.cpp:92, m/s/s), dung cho guided qua NE_set_max_speed_accel_m
+#   (ArduCopter/mode_guided.cpp:255). Can ~8 de tang toc va do khi target doi huong o 20 m/s.
+WP_ACC 8
+# ATC_ANGLE_MAX: goc nghieng toi da (AC_AttitudeControl.cpp:164, don vi DO; tien to ATC_ vi bo dieu khien
+#   thai do dang ky voi tien to "ATC_" trong ArduCopter/Parameters.cpp). Ten "ANGLE_MAX" khong ton tai o 4.7.2
+#   (da do bang PARAM_REQUEST_READ). Mac dinh 30 gioi han target o ~10.3 m/s (do thuc te).
+#   Mo hinh freestyle can ~45 do de giu 20 m/s (drag), nen chaser can du tru nghieng; freestyle.param cung dat 70.
+ATC_ANGLE_MAX 70
+# PSC_ANGLE_MAX (AC_PosControl.cpp:125) de mac dinh 0 = dung ATC_ANGLE_MAX.

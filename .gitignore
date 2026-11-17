@@ -1,0 +1,13 @@
+# Ket qua mo phong (nang, giu tren may, khong dua len GitHub)
+out/
+*.BIN
+*.tlog
+*.tlog.raw
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# File tam cua Excel
+~$*.xlsx

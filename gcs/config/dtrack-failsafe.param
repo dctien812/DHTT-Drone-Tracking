@@ -1,0 +1,56 @@
+# ============================================================================
+# DE XUAT, CHUA BAY THU, nguoi dung phai duyet tung gia tri truoc khi nap.
+# Tham so failsafe / hang rao cho ArduCopter 4.7.2 (FC Matek H743-WING V3).
+# Ten tham so da doi chieu voi ma nguon tag Copter-4.7.2 (~/ardupilot, WSL) ngay 2026-11-16.
+# Khong dat gia tri cho thu phu thuoc phan cung chua chot: nguong dien ap/dung luong pin
+# (BATT_LOW_VOLT, BATT_CRT_VOLT, BATT_LOW_MAH, BATT_CRT_MAH), motor, FS_THR_VALUE (phu thuoc receiver ELRS).
+# Chu thich nam tren dong rieng (khong chen cuoi dong) de tranh loi doc file cua trinh nap.
+# Nap bang MP: CONFIG > Full Parameter List > Load from file, doc diff roi moi Write Params.
+# Luu y: RTL_ALT / RTL_ALT_FINAL cu da doi thanh RTL_ALT_M / RTL_ALT_FINAL_M (don vi m) trong 4.7.
+# Luu y: ARMING_CHECK khong con trong ma nguon 4.7.2; khong dat o day.
+# ============================================================================
+
+# FS_THR_ENABLE: 1 = RTL khi mat RC. Thuc te phu thuoc cach cau hinh failsafe receiver ELRS, phai thu tren ban.
+FS_THR_ENABLE,1
+
+# FS_GCS_ENABLE: 3 = SmartRTL, khong duoc thi RTL, khi mat GCS. Can than: WiFi Backpack mat ngan co the gay RTL gia.
+FS_GCS_ENABLE,3
+# FS_GCS_TIMEOUT: so giay mat GCS truoc khi kich failsafe (khoang 2-120).
+FS_GCS_TIMEOUT,5
+
+# FS_EKF_ACTION: 1 = Land khi EKF hong (0 chi bao, 2 AltHold, 3 Land moi che do).
+FS_EKF_ACTION,1
+# FS_EKF_THRESH: nguong phuong sai EKF kich failsafe (mac dinh 0.8).
+FS_EKF_THRESH,0.8
+# FS_VIBE_ENABLE: 1 = bao rung qua manh.
+FS_VIBE_ENABLE,1
+# FS_CRASH_CHECK: 1 = tu disarm khi phat hien roi/lat.
+FS_CRASH_CHECK,1
+
+# Pin: chi dat hanh dong, KHONG dat nguong. Hanh dong chi co tac dung sau khi nguoi dung tu dat nguong.
+# BATT_FS_LOW_ACT: 3 = SmartRTL hoac RTL khi pin yeu.
+BATT_FS_LOW_ACT,3
+# BATT_FS_CRT_ACT: 1 = Land khi pin cuc thap.
+BATT_FS_CRT_ACT,1
+
+# RTL_ALT_M: do cao RTL (m), phai cao hon vat can tai san bay.
+RTL_ALT_M,30
+# RTL_ALT_FINAL_M: 0 = ha canh tai cho ve.
+RTL_ALT_FINAL_M,0
+# RTL_LOIT_TIME: ms bay vong tren Home truoc khi ha.
+RTL_LOIT_TIME,5000
+
+# FENCE_ENABLE: 1 = bat hang rao.
+FENCE_ENABLE,1
+# FENCE_TYPE: bitmask 1 = do cao toi da, 2 = vong tron quanh Home, 4 = da giac, 8 = do cao toi thieu (libraries/AC_Fence/AC_Fence.h:15-18, Copter-4.7.2).
+# Dat 3 = do cao toi da + vong tron. KHONG bat bit da giac (4, tong 7) khi chua nap da giac: pre-arm bao "Polygon fence(s) invalid"
+# va chan arm neu chua co da giac nap (libraries/AC_Fence/AC_Fence.cpp:432-437). Chi doi thanh 7 SAU KHI da nap da giac va thu arm tren ban.
+FENCE_TYPE,3
+# FENCE_ACTION: 3 = SmartRTL hoac RTL hoac Land khi vuot hang rao.
+FENCE_ACTION,3
+# FENCE_ALT_MAX: do cao toi da (m), tinh theo FENCE_ALT_MAX_TP (mac dinh: so voi Home).
+FENCE_ALT_MAX,60
+# FENCE_RADIUS: ban kinh (m) quanh Home, nguoi dung tu chon theo san bay.
+FENCE_RADIUS,150
+# FENCE_MARGIN: le canh bao (m).
+FENCE_MARGIN,5

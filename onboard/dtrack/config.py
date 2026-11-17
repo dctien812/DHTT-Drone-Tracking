@@ -1,0 +1,178 @@
+"""Cau hinh khoi DIEU KHIEN / giam sat. Don vi ghi ro o moi truong (hau to _m, _mps, _s, _deg...).
+
+Nap tu file TOML hoac JSON tuy chon: moi muc (guidance, supervisor, mavlink, camera, app)
+la mot bang/doi tuong con, chi can ghi cac khoa muon doi; khoa la se bi tu choi (tranh go sai ten).
+"""
+from __future__ import annotations
+
+import json
+import math
+from dataclasses import dataclass, field, fields, is_dataclass
+from typing import Any, Dict, Optional
+
+from .types import CameraModel
+
+
+@dataclass
+class GuidanceConfig:
+    # --- khoang cach ---
+    range_set_m: float = 15.0          # m, khoang cach dat
+    range_tau_s: float = 0.0           # s, r_dat = max(range_set_m, tau * |v ban than|); 0 = co dinh
+    range_min_m: float = 10.0          # m, khoang cach toi thieu CUNG: duoi nguong -> lui theo duong ngam
+    range_min_hyst_m: float = 2.0      # m, thoat che do lui khi r > range_min + hyst
+    back_speed_mps: float = 5.0        # m/s, toc do lui (tuong doi so voi muc tieu) khi duoi khoang cach toi thieu
+    kp_range: float = 0.3              # 1/s, he so ti le (r - r_dat) -> van toc doc duong ngam
+    close_speed_max_mps: float = 2.0   # m/s, gioi han thanh phan P tien lai gan (so voi van toc muc tieu uoc luong)
+    open_speed_max_mps: float = 3.0    # m/s, gioi han thanh phan P lui ra
+    # --- khop van toc muc tieu ---
+    range_rate_max_mps: float = 60.0   # m/s, |r_dot| duoc dung toi da (cat)
+    los_rate_max_rad_s: float = 1.5    # rad/s, |los_rate| duoc dung toi da (cat)
+    invalid_decel_mps2: float = 2.0    # m/s^2, khi range_valid=False: giam thanh phan tien lai gan tu lenh truoc
+    # --- giu muc tieu o giua anh (phuong dung) ---
+    kp_vert_center: float = 0.5        # (m/s)/m, do lech dung (m = r*tan(goc lech)) -> van toc dung
+    vert_center_max_mps: float = 2.5   # m/s, gioi han thanh phan dung do giu giua anh
+    # --- gioi han ---
+    v_max_mps: float = 30.0            # m/s, toc do ngang toi da cua lenh
+    climb_max_mps: float = 4.0         # m/s, toc do len toi da
+    descend_max_mps: float = 4.0       # m/s, toc do xuong toi da
+    a_max_mps2: float = 2.0            # m/s^2, gia toc ngang toi da cua lenh; nho de than quad khong nghieng qua xa ngoai truong nhin camera co dinh
+    a_lat_mps2: float = 4.0            # m/s^2, gia toc ngang toi da VUONG GOC huong bay (re): lon hon doc huong vi khong lam mui chui/ngang len
+    a_decel_mps2: float = 0.8          # m/s^2, gia toc ngang toi da khi GIAM toc do (phanh nho hon tang toc: quad ngang mui len khi phanh, camera co dinh se mat muc tieu)
+    a_back_mps2: float = 3.0           # m/s^2, gia toc ngang toi da khi dang lui do duoi khoang cach toi thieu (uu tien cao hon a_max)
+    a_max_z_mps2: float = 1.5          # m/s^2, gia toc dung toi da
+    jerk_max_mps3: float = 6.0         # m/s^3, toc do doi gia toc lenh toi da
+    dt_default_s: float = 1.0 / 30     # s, dt khi chua co lenh truoc
+    dt_max_s: float = 0.2              # s, dt toi da dung de gioi han (lenh truoc cu hon -> coi nhu 0.2 s)
+    yaw_lead_s: float = 0.5            # s, yaw lenh = huong ngam + toc do quay ngang cua duong ngam * yaw_lead_s (bu tre FC)
+    yaw_rate_max_dps: float = 90.0     # do/s, toc do doi yaw lenh toi da
+    min_alt_m: float = 10.0            # m, do cao toi thieu so voi diem home EKF: duoi nguong khong duoc xuong them
+    # --- camera (de tinh do lech dung cua muc tieu trong anh) ---
+    # Dung chung voi CameraConfig; guidance chi can R_body_cam.
+    cam_tilt_up_deg: float = 15.0      # do, camera ngang len so voi truc mui
+
+
+@dataclass
+class SupervisorConfig:
+    coast_follow_s: float = 2.0        # s, COAST: tiep tuc theo du doan toi da chung nay (< coast_timeout cua tracker)
+    lost_rtl_s: float = 10.0           # s, khong co muc tieu qua chung nay -> yeu cau RTL
+    rtl_on_lost: bool = True           # bat/tat yeu cau RTL
+    heartbeat_timeout_s: float = 3.0   # s, mat HEARTBEAT cua FC -> ABORT (GUIDED tu dung sau 3 s khong lenh)
+    pose_timeout_s: float = 0.5        # s, tuoi du lieu tu the (thoi diem nhan) -> ABORT
+    loop_slow_s: float = 0.25          # s, chu ky vong lap cham hon nguong -> ABORT
+    abort_recover_s: float = 1.0       # s, het loi roi giu ABORT them chung nay roi moi ve SEARCH
+    engage_rc_channel: int = 8         # kenh RC (1-based) dung lam tin hieu engage khi bay that
+    engage_rc_threshold_us: int = 1700  # us, kenh > nguong = engage
+    require_pose_for_engage: bool = True
+
+
+@dataclass
+class MavlinkConfig:
+    connect: str = "tcp:127.0.0.1:5770"   # tcp:host:port | udp:host:port | udpin:host:port | /dev/ttyXXX[,baud]
+    baud: int = 115200                    # baud khi noi serial
+    source_system: int = 1                # sysid cua may dong hanh (khong trung sysid FC)
+    source_component: int = 191           # MAV_COMP_ID_ONBOARD_COMPUTER
+    heartbeat_timeout_s: float = 10.0     # s, cho HEARTBEAT dau tien khi ket noi
+    attitude_rate_hz: float = 50.0        # Hz, ATTITUDE_QUATERNION
+    position_rate_hz: float = 50.0        # Hz, LOCAL_POSITION_NED
+    global_rate_hz: float = 10.0          # Hz, GLOBAL_POSITION_INT
+    heartbeat_rate_hz: float = 10.0       # Hz, yeu cau HEARTBEAT (de nhan ra doi che do nhanh; FC co the bo qua)
+    rc_rate_hz: float = 10.0              # Hz, RC_CHANNELS
+    resend_hz: float = 10.0               # Hz, toi thieu gui lai lenh (GUIDED dung sau 3 s khong co lenh)
+    max_poll_s: float = 0.010             # s, thoi gian toi da cho moi lan doc ban tin
+
+
+@dataclass
+class CameraConfig:
+    tilt_up_deg: float = 15.0   # do, camera ngang len so voi truc mui (quad nghieng mui xuong khi tang toc)
+    fx: float = 1739.0          # px (lens 6 mm, ~45x35 do; lens 8 mm: 2319, chi ~35x26 do - qua hep cho camera co dinh)
+    fy: float = 1739.0
+    width: int = 1456
+    height: int = 1088
+
+    def to_model(self) -> CameraModel:
+        return make_camera(self.tilt_up_deg, self.fx, self.fy, self.width, self.height)
+
+
+@dataclass
+class AppConfig:
+    loop_hz: float = 30.0
+    brake_on_exit_s: float = 15.0   # s, toi da phanh tuong minh khi ket thuc truoc khi thoat
+    brake_exit_speed_mps: float = 0.5  # m/s, coi la da dung
+    log_dir: str = "logs"
+    log_queue: int = 20000
+    guidance: GuidanceConfig = field(default_factory=GuidanceConfig)
+    supervisor: SupervisorConfig = field(default_factory=SupervisorConfig)
+    mavlink: MavlinkConfig = field(default_factory=MavlinkConfig)
+    camera: CameraConfig = field(default_factory=CameraConfig)
+
+    def __post_init__(self) -> None:
+        # goc camera chi nhap mot noi (camera); guidance dung cung gia tri
+        self.guidance.cam_tilt_up_deg = self.camera.tilt_up_deg
+
+
+def make_camera(tilt_up_deg: float = 0.0, fx: float = 2319.0, fy: Optional[float] = None,
+                width: int = 1456, height: int = 1088) -> CameraModel:
+    """CameraModel voi camera ngang len tilt_up_deg so voi truc mui (quanh truc y than).
+
+    Truc quang z_cam = (cos t, 0, -sin t) trong he than FRD; x_cam = y_than; y_cam = (sin t, 0, cos t).
+    R_body_cam co cot = cac truc do (t = 0 trung voi mac dinh cua types.CameraModel).
+    """
+    t = math.radians(tilt_up_deg)
+    s, c = math.sin(t), math.cos(t)
+    R = ((0.0, s, c), (1.0, 0.0, 0.0), (0.0, c, -s))
+    return CameraModel(width=width, height=height, fx=fx, fy=fx if fy is None else fy,
+                       cx=width / 2.0, cy=height / 2.0, R_body_cam=R)
+
+
+def validate(cfg: AppConfig) -> None:
+    g, s = cfg.guidance, cfg.supervisor
+    if g.range_min_m <= 0 or g.range_set_m < g.range_min_m + g.range_min_hyst_m:
+        raise ValueError("range_set_m phai >= range_min_m + range_min_hyst_m")
+    for name in ("v_max_mps", "a_max_mps2", "a_max_z_mps2", "jerk_max_mps3", "climb_max_mps", "descend_max_mps"):
+        v = getattr(g, name)
+        if not (math.isfinite(v) and v > 0):
+            raise ValueError("%s phai > 0" % name)
+    if cfg.loop_hz <= 0 or s.loop_slow_s <= 0:
+        raise ValueError("loop_hz / loop_slow_s phai > 0")
+    if cfg.mavlink.resend_hz < 10.0:
+        raise ValueError("resend_hz phai >= 10 (GUIDED dung sau 3 s khong co lenh)")
+
+
+def _fill(obj: Any, data: Dict[str, Any], path: str) -> None:
+    names = {f.name: f for f in fields(obj)}
+    for k, v in data.items():
+        if k not in names:
+            raise ValueError("khoa la trong cau hinh: %s.%s" % (path, k))
+        cur = getattr(obj, k)
+        if is_dataclass(cur):
+            if not isinstance(v, dict):
+                raise ValueError("%s.%s phai la bang/doi tuong" % (path, k))
+            _fill(cur, v, path + "." + k)
+        else:
+            if isinstance(cur, bool):
+                v = bool(v)
+            elif isinstance(cur, int):
+                v = int(v)
+            elif isinstance(cur, float):
+                v = float(v)
+            setattr(obj, k, v)
+
+
+def load_config(path: Optional[str] = None) -> AppConfig:
+    """Nap AppConfig; path None -> mac dinh. Duoi .toml hoac .json."""
+    cfg = AppConfig()
+    if path:
+        if path.lower().endswith(".json"):
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            try:
+                import tomllib  # Python >= 3.11
+            except ImportError as exc:  # pragma: no cover
+                raise RuntimeError("can Python >= 3.11 de doc TOML (hoac dung file .json)") from exc
+            with open(path, "rb") as f:
+                data = tomllib.load(f)
+        _fill(cfg, data, "config")
+    cfg.__post_init__()
+    validate(cfg)
+    return cfg
