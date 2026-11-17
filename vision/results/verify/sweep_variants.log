@@ -1,0 +1,16 @@
+20.0 1280 V0_gray_lanczos recall 0.8067 n 300
+20.0 1280 V1_replicate_lanczos recall 0.8067 n 300
+20.0 1280 V2_gray_area recall 0.8033 n 300
+20.0 1280 V3_patch8x_on_gray recall 0.8133 n 300
+40.0 1280 V0_gray_lanczos recall 0.9033 n 300
+40.0 1280 V1_replicate_lanczos recall 0.9067 n 300
+40.0 1280 V2_gray_area recall 0.9 n 300
+40.0 1280 V3_patch8x_on_gray recall 0.9067 n 300
+20.0 640 V0_gray_lanczos recall 0.59 n 300
+20.0 640 V1_replicate_lanczos recall 0.6133 n 300
+20.0 640 V2_gray_area recall 0.6033 n 300
+20.0 640 V3_patch8x_on_gray recall 0.6467 n 300
+40.0 640 V0_gray_lanczos recall 0.8533 n 300
+40.0 640 V1_replicate_lanczos recall 0.85 n 300
+40.0 640 V2_gray_area recall 0.8467 n 300
+40.0 640 V3_patch8x_on_gray recall 0.8633 n 300
