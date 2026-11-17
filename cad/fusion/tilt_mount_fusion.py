@@ -11,9 +11,10 @@ import adsk.fusion
 
 P = dict(
     # --- Camera Module 3 (bo mach) ---
-    cam_w=25.0, cam_h=24.0, cam_t=1.0,
+    # Nguon: ban ve co khi chinh hang RP-008155-DS (Camera Module 3 Wide), doc 2026-11-17
+    cam_w=25.0, cam_h=23.862, cam_t=1.12,
     cam_hole_dx=21.0, cam_hole_dz=12.5, cam_hole_top=2.0,   # hang lo tren cach mep tren
-    lens_side=8.5, lens_len=11.5,                           # khoi lens (chi de xem)
+    lens_side=10.8, lens_len=8.3, lens_dz=-2.47,            # khoi lens (chi de xem); tam lens cach mep tren 14.4
     # --- Servo MG90S ---
     sv_len=22.8, sv_wid=12.2, sv_body=15.9, sv_tab_t=2.5, sv_top=4.7,
     sv_tab_len=32.3, sv_hole_pitch=27.8, sv_shaft_off=5.5,  # truc lech tam than
@@ -24,7 +25,10 @@ P = dict(
     side_gap=2.0, side_y_front=8.0, side_z=10.0,
     horn_recess=1.6, horn_arm_w=6.2, horn_hub_d=7.6, horn_screw_d=5.0,
     # --- De chu U ---
-    gap_servo=6.0, gap_pivot=1.0, axis_h=24.0, base_t=3.0, up_top=9.0,
+    # gap_servo: tu mat trong vach servo toi mat ngoai gia kep. TowerPro MG90S: cao tong 32.1,
+    # tai o ~18.5-21 tu day -> dau truc cach mat tai 11-13.6 mm, tru vach 3 mm = 8-10.6 mm.
+    # Chon 9.0 (thien ve rong: thieu thi chem long den duoi canh tay servo, chat thi khong sua duoc).
+    gap_servo=9.0, gap_pivot=1.0, axis_h=24.0, base_t=3.0, up_top=9.0,
     base_y_back=-32.0, base_y_front=21.0, up_y_back=-24.0, up_y_front=13.0,
 )
 
@@ -146,14 +150,23 @@ def make_mock_camera():
     p, g = P, geometry()
     pcb = box(-p['cam_w'] / 2, p['cam_w'] / 2, g['pcb_back'], g['pcb_back'] + p['cam_t'], -p['cam_h'] / 2, p['cam_h'] / 2)
     lens = box(-p['lens_side'] / 2, p['lens_side'] / 2, g['pcb_back'] + p['cam_t'], g['pcb_back'] + p['cam_t'] + p['lens_len'],
-               -p['lens_side'] / 2, p['lens_side'] / 2)
-    return union(pcb, [lens])
+               p['lens_dz'] - p['lens_side'] / 2, p['lens_dz'] + p['lens_side'] / 2)
+    # dau noi cap o mat sau, sat mep duoi (19.61 x 5.71, nho ra 2.75)
+    conn = box(-9.8, 9.8, g['pcb_back'] - 2.75, g['pcb_back'], -p['cam_h'] / 2, -p['cam_h'] / 2 + 5.71)
+    return union(pcb, [lens, conn])
 
 
 def build(app):
-    doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
     design = adsk.fusion.Design.cast(app.activeProduct)
-    design.designType = adsk.fusion.DesignTypes.DirectDesignType
+    ours = design is not None and any(o.component.name == 'De_chu_U' for o in design.rootComponent.occurrences)
+    if ours:
+        # dung lai tai lieu khop gat dang mo: xoa cac khoi cu roi dung lai
+        for o in list(design.rootComponent.occurrences):
+            o.deleteMe()
+    else:
+        app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+        design = adsk.fusion.Design.cast(app.activeProduct)
+        design.designType = adsk.fusion.DesignTypes.DirectDesignType
     root = design.rootComponent
     out = []
     for name, maker in (('De_chu_U', make_base), ('Gia_kep_camera', make_cradle),
