@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Màn hình lab - Drone Tracking (L0)</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>Màn hình lab · mốc L0 · chỉ hiển thị và chọn mục tiêu, không gửi lệnh tới thiết bị nào</header>
+<main>
+  <section id="viewbox">
+    <img id="view" src="/stream.mjpg" alt="Hình trực tiếp" draggable="false">
+    <div id="perf">--</div>
+    <div id="notice" hidden></div>
+  </section>
+  <aside>
+    <h2>Mục tiêu</h2>
+    <div id="lockbox" class="idle">Chưa khóa</div>
+    <div class="btns">
+      <button id="btn-lock" type="button">Khóa</button>
+      <button id="btn-release" type="button">Hủy</button>
+    </div>
+    <p class="hint">Bấm vào một khung trên hình để khóa vật thể đó; "Khóa" chọn vật thể có độ tin cậy cao nhất; "Hủy" bỏ khóa.</p>
+    <p id="msg" class="hint"></p>
+    <h2>Nhật ký</h2>
+    <ul id="events"></ul>
+  </aside>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
