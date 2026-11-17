@@ -7,6 +7,7 @@ Phan mem KHONG arm, KHONG cat canh, KHONG doi sang GUIDED.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import math
 import os
 import signal
@@ -55,6 +56,11 @@ class App:
         self.stop_file = stop_file
         self.clock = clock
         self.tracker = SingleTargetTracker(cfg.camera.to_model())
+        self.gimbal = None
+        if cfg.camera.gimbal_enabled:     # mo hinh khop gat (khop that: doc goc phan hoi servo thay cho mo hinh nay)
+            from simtools.gimbal_model import GimbalModel
+            c = cfg.camera
+            self.gimbal = GimbalModel(c.gimbal_travel_deg, c.gimbal_rate_dps, c.gimbal_lag_s)
         self.sup = Supervisor(cfg.supervisor, cfg.guidance)
         self._stop = False
         self.stats = {"ticks": 0, "sent": 0, "aborts": 0, "rtl_requests": 0}
@@ -83,7 +89,10 @@ class App:
             self.link.poll()
             own = self.link.own_state()
             dets = self.source.poll()
-            track = (self.tracker.update(dets, own, now) if own is not None
+            own_cam = own            # tu the dung de chieu tia camera (tracker); guidance/supervisor dung tu the than
+            if self.gimbal is not None and own is not None:
+                own_cam = dataclasses.replace(own, q_world_body=self.gimbal.step(now, own.q_world_body)[0])
+            track = (self.tracker.update(dets, own_cam, now) if own is not None
                      else TrackState(t=now, status=TrackStatus.SEARCH))
             engage = self._engage_signal()
             hb, pa = self.link.heartbeat_age(now), self.link.pose_age(now)
@@ -133,11 +142,20 @@ class App:
             time.sleep(0.05)
 
 
+def _make_gimbal(cfg: AppConfig):
+    if not cfg.camera.gimbal_enabled:
+        return None
+    from simtools.gimbal_model import GimbalModel
+    c = cfg.camera
+    return GimbalModel(c.gimbal_travel_deg, c.gimbal_rate_dps, c.gimbal_lag_s)
+
+
 def build_source(args, cfg: AppConfig) -> DetectionSource:
     if args.source == "sim":
         from simtools.sim_truth_source import SimTruthSource
         return SimTruthSource(target_url=args.sim_target, chaser_url=args.sim_chaser, camera=cfg.camera.to_model(),
-                              seed=args.sim_seed, blackout_file=args.sim_blackout_file)
+                              seed=args.sim_seed, blackout_file=args.sim_blackout_file,
+                              gimbal=_make_gimbal(cfg))
     if args.source == "camera":
         return CameraHailoSource()
     raise ValueError("nguon la: %s" % args.source)

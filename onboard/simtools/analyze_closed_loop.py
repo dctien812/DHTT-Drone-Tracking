@@ -38,6 +38,108 @@ def heading(vn, ve):
 def angdiff(a, b):
     return (a - b + 180.0) % 360.0 - 180.0
 
+def b4_metrics(a, truth, app, ev, scenario):
+    """Do dac B4 (khong anh huong PASS/FAIL): hinh hoc camera tu truth + app_cfg.json (fx, tilt, khop gat).
+    In cac dong 'B4 ...' va mot dong 'B4JSON {...}'."""
+    import statistics
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    import numpy as np
+    from dtrack.geometry import quat_from_euler, quat_to_matrix
+    from dtrack.config import make_camera
+    from simtools.gimbal_model import GimbalModel
+    cfgp = os.path.join(a.out, "app_cfg.json")
+    cam = {}
+    if os.path.exists(cfgp):
+        try:
+            cam = json.load(open(cfgp)).get("camera", {})
+        except ValueError:
+            cam = {}
+    fx = float(cam.get("fx", 1739.0)); tilt = float(cam.get("tilt_up_deg", 15.0))
+    W, H = int(cam.get("width", 1456)), int(cam.get("height", 1088))
+    gm = GimbalModel(cam.get("gimbal_travel_deg", 50.0), cam.get("gimbal_rate_dps", 300.0),
+                     cam.get("gimbal_lag_s", 0.05)) if cam.get("gimbal_enabled") else None
+    Rbc = np.array(make_camera(tilt, fx, fx, W, H).R_body_cam)
+    T = np.array([fl(r, "t") for r in truth])
+    col = lambda k: np.array([fl(r, k) for r in truth])
+    u = np.stack([col("tgt_n") - col("ch_n"), col("tgt_e") - col("ch_e"), -(col("tgt_alt") - col("ch_alt"))], 1)
+    D = col("d3")
+    spd = np.hypot(col("tgt_vn"), col("tgt_ve"))
+    rr, pp, yy = col("ch_roll"), col("ch_pitch"), col("ch_yaw")
+    n = len(T)
+    out_of = np.zeros(n, bool); ang = np.zeros(n); delta = np.zeros(n)
+    for i in range(n):
+        qb = quat_from_euler(rr[i], pp[i], yy[i])
+        Rb = quat_to_matrix(qb)
+        qc = qb
+        if gm is not None:
+            qc, delta[i] = gm.step(T[i], tuple(qb))
+        ray = (quat_to_matrix(qc) @ Rbc).T @ u[i]
+        if ray[2] <= 1e-6:
+            out_of[i] = True
+        else:
+            px, py = fx * ray[0] / ray[2] + W / 2.0, fx * ray[1] / ray[2] + H / 2.0
+            out_of[i] = not (0.0 <= px <= W and 0.0 <= py <= H)
+        un = u[i] / max(np.linalg.norm(u[i]), 1e-9)
+        ang[i] = math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(Rb @ np.array([0.0, 0.0, -1.0]), un))))))
+    t_go = ev.get("t_go")
+    t_stop = ev.get("t_stop_target")
+    t_end = ev.get("t_both_stopped") or T[-1]
+    if t_go is None or t_stop is None:
+        return ["B4 thieu t_go/t_stop_target: bo qua"]
+    i90 = np.where((T >= t_go) & (spd >= 0.9 * a.speed))[0]
+    t90 = T[i90[0]] if len(i90) else t_stop
+    phases = {"tang_toc": (t_go, t90), "bam_on_dinh": (t90, t_stop), "phanh_cuoi": (t_stop, t_end)}
+    res = {"fx": fx, "tilt": tilt, "gimbal": bool(gm), "range": a.rng, "speed": a.speed, "scenario": scenario}
+    lines = ["B4 camera: fx=%.0f px (FOV ngang %.0f, doc %.0f do), tilt=%.0f, khop gat=%s" % (
+        fx, 2 * math.degrees(math.atan(W / 2 / fx)), 2 * math.degrees(math.atan(H / 2 / fx)), tilt, "co" if gm else "khong")]
+    for name, (ta, tb) in phases.items():
+        m = (T >= ta) & (T <= tb)
+        if not m.any():
+            continue
+        j = np.where(m)[0][np.argmin(D[m])]
+        oo = out_of[m]
+        trans = int(np.sum(oo[1:] & ~oo[:-1])) + int(oo[0])
+        dts = np.diff(T[m], append=T[m][-1])
+        out_t = float(np.sum(dts[oo]))
+        res[name] = {"dur": float(tb - ta), "min_d3": float(D[j]), "min_t_rel": float(T[j] - T[0]), "out_n": trans,
+                     "out_s": out_t, "ang_min": float(ang[m].min()), "ang_med": float(np.median(ang[m])),
+                     "ang_max": float(ang[m].max())}
+        r = res[name]
+        lines.append("B4 pha %-11s %5.1fs: min d3 %.2f m (t_rel %.1f) ; ra khoi khung %d lan / %.2f s ; "
+                     "goc(truc day than, huong nhin) min/trung vi/max = %.0f/%.0f/%.0f do" % (
+                         name, r["dur"], r["min_d3"], r["min_t_rel"], r["out_n"], r["out_s"], r["ang_min"], r["ang_med"], r["ang_max"]))
+    m = (T >= t_go) & (T <= t_end)
+    oo = out_of[m]
+    dts = np.diff(T[m], append=T[m][-1])
+    res["out_total_n"] = int(np.sum(oo[1:] & ~oo[:-1])) + int(oo[0]); res["out_total_s"] = float(np.sum(dts[oo]))
+    lines.append("B4 ra khoi khung toan chuyen (t_go..dung): %d lan, %.2f s" % (res["out_total_n"], res["out_total_s"]))
+    if gm is not None:
+        rate = np.abs(np.diff(delta)) / np.maximum(np.diff(T), 1e-6)
+        res["gimbal"] = {"delta_min": math.degrees(delta.min()), "delta_max": math.degrees(delta.max()),
+                         "rate_max": math.degrees(float(rate.max()))}
+        lines.append("B4 khop gat: hanh trinh dung %.1f..%.1f do (so voi danh dinh), toc do quay max %.0f do/s" % (
+            res["gimbal"]["delta_min"], res["gimbal"]["delta_max"], res["gimbal"]["rate_max"]))
+    t_ws = ev.get("t_ws")
+    if t_ws is not None:
+        w = (T >= t_ws) & (T <= t_ws + a.window)
+        size = fx * 0.30 / D[w]
+        res["size_px_med"] = float(np.median(size))
+        lines.append("B4 kich thuoc muc tieu trong cua so (truth): trung vi %.1f px (RANGE %.0f)" % (res["size_px_med"], a.rng))
+        errs = []
+        for r in app:
+            try:
+                ta_ = float(r["t"])
+                if t_ws <= ta_ <= t_ws + a.window and r["range_valid"] == "1" and r["range"] not in ("", None):
+                    errs.append(float(r["range"]) - float(np.interp(ta_, T, D)))
+            except (KeyError, ValueError):
+                pass
+        if errs:
+            res["range_err"] = {"n": len(errs), "mean": float(np.mean(errs)), "abs_mean": float(np.mean(np.abs(errs))),
+                                "rms": float(math.sqrt(np.mean(np.square(errs))))}
+            lines.append("B4 sai so uoc luong khoang cach khi range_valid (%d mau): TB %.2f, |TB| %.2f, RMS %.2f m" % (
+                len(errs), res["range_err"]["mean"], res["range_err"]["abs_mean"], res["range_err"]["rms"]))
+    lines.append("B4JSON " + json.dumps(res))
+    return lines
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -186,6 +288,10 @@ def main():
         lines.append("trang thai supervisor trong doan do: %s" % dict(Counter(r["state"] for r in aseg)))
         rtl = sum(int(r["rtl"]) for r in app)
         lines.append("so lan yeu cau RTL = %d" % rtl)
+    try:
+        lines.extend(b4_metrics(a, truth, app, ev, scenario))
+    except Exception as exc:     # do dac B4 khong duoc lam hong ket qua chinh
+        lines.append("B4 loi: %r" % (exc,))
     print("\n".join(lines))
     print("KET QUA: %s" % ("PASS" if ok_all else "FAIL"))
     return 0 if ok_all else 1

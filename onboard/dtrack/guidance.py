@@ -177,7 +177,7 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
     if sp_p > 1.0 and prev_accel is not None and _finite_vec(prev_accel):
         a_al = float(np.asarray(prev_accel, float)[:2] @ (v_prev[:2] / sp_p))
     e_ref = max(-cfg.elev_ref_max_deg, min(cfg.elev_ref_max_deg,
-                                           cfg.target_elev_ref_deg - math.degrees(math.atan2(a_al, 9.81))))
+                                           cfg.target_elev_ref_deg - cfg.elev_accel_comp * math.degrees(math.atan2(a_al, 9.81))))
     err = max(-0.5, min(0.5, err - math.radians(cfg.cam_tilt_up_deg - e_ref)))
     vc = max(-cfg.vert_center_max_mps, min(cfg.vert_center_max_mps, cfg.kp_vert_center * r_est * math.tan(err)))
     w = np.array([0.0, 0.0, vc])

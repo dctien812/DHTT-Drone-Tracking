@@ -56,8 +56,9 @@ class SimStateReader:
 class SimTruthSource(DetectionSource):
     def __init__(self, target_url: str, chaser_url: str, camera: Optional[CameraModel] = None,
                  seed: int = 12345, blackout_file: Optional[str] = None, max_age_s: float = 0.2,
-                 synth: Optional[SyntheticConfig] = None, clock=time.monotonic):
+                 synth: Optional[SyntheticConfig] = None, clock=time.monotonic, gimbal=None):
         self.clock = clock
+        self.gimbal = gimbal            # GimbalModel hoac None (camera co dinh)
         self.cam = camera or CameraModel()
         cfg = synth or SyntheticConfig(frame_rate_hz=30.0, latency_s=0.06, center_sigma_px=1.5, size_sigma_px=1.0,
                                        p_miss=0.20, p_false=0.05, clip_to_frame=True)
@@ -93,6 +94,8 @@ class SimTruthSource(DetectionSource):
 
     def _own(self, ch, now: float, dch: float) -> OwnState:
         q = tuple(float(c) for c in quat_from_euler(ch[7], ch[8], ch[9]))
+        if self.gimbal is not None:
+            q, _ = self.gimbal.step(now, q)      # camera that = q_eff * R_body_cam (on dinh pitch co gioi han servo)
         return OwnState(t=now, pos_ned=(0.0, 0.0, 0.0), vel_ned=(ch[4], ch[5], ch[6]), q_world_body=q,
                         armed=True, mode="GUIDED")
 

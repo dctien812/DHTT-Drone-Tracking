@@ -32,6 +32,7 @@ class GuidanceConfig:
     kp_vert_center: float = 0.5        # (m/s)/m, do lech dung (m = r*tan(goc lech)) -> van toc dung
     vert_center_max_mps: float = 2.5   # m/s, gioi han thanh phan dung do giu giua anh
     target_elev_ref_deg: float = 4.0   # do, goc nang MONG MUON cua muc tieu so voi mat phang ngang cua drone khi khong tang/giam toc
+    elev_accel_comp: float = 1.0       # he so bu nghieng mui theo gia toc lenh; = 0 khi camera tu on dinh pitch (khop gat), dat tu dong trong AppConfig
     elev_ref_max_deg: float = 8.0      # do, goc nang mong muon bi cat trong +-gia tri nay (bu truoc mui chui khi tang toc theo GIA TOC LENH, khong theo tu the do)
     # --- gioi han ---
     v_max_mps: float = 30.0            # m/s, toc do ngang toi da cua lenh
@@ -96,6 +97,11 @@ class CameraConfig:
     fy: float = 1739.0
     width: int = 1456
     height: int = 1088
+    # khop gat mot truc on dinh pitch (CHI mo phong/do dac; mac dinh TAT = camera co dinh)
+    gimbal_enabled: bool = False
+    gimbal_travel_deg: float = 50.0    # do, hanh trinh +- quanh vi tri lap danh dinh
+    gimbal_rate_dps: float = 300.0     # do/s, toc do quay toi da
+    gimbal_lag_s: float = 0.05         # s, tre bac nhat cua servo
 
     def to_model(self) -> CameraModel:
         return make_camera(self.tilt_up_deg, self.fx, self.fy, self.width, self.height)
@@ -116,6 +122,8 @@ class AppConfig:
     def __post_init__(self) -> None:
         # goc camera chi nhap mot noi (camera); guidance dung cung gia tri
         self.guidance.cam_tilt_up_deg = self.camera.tilt_up_deg
+        if self.camera.gimbal_enabled:
+            self.guidance.elev_accel_comp = 0.0     # camera da on dinh pitch: khong bu truoc lan nua
 
 
 def make_camera(tilt_up_deg: float = 0.0, fx: float = 2319.0, fy: Optional[float] = None,

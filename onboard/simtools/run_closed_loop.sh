@@ -3,6 +3,7 @@
 # Dung: run_closed_loop.sh <toc_do_target_m/s>
 # Bien moi truong: SEED (mac dinh 1, seed bo phat hien tong hop), SCENARIO (none|blackout|disengage),
 #   STRAIGHT=1 (muc tieu bay thang, khong re: target.py --first-turn rat lon), SPEEDUP (mac dinh 1),
+#   CAM_FX (px), CAM_TILT (do), GIMBAL=1 (khop gat on dinh pitch) -> ghi $OUT/app_cfg.json, analyzer doc lai de tinh hinh hoc camera.
 #   RANGE (15; khoang cach dat, truyen cho helper, bo cham VA app qua file cau hinh tam neu CONFIG khong dat), CONFIG (file TOML/JSON cua app, tuy chon), MAX_WALL (giay that, 900),
 #   OUT_ROOT (mac dinh onboard/simtools/out).
 # Chi kill cac PID do chinh script nay tao (khong pkill). Khong goi sim/run_chase.sh.
@@ -77,8 +78,19 @@ done
 APP_RC=99
 if [ -f "$OUT/ready" ]; then
   CFGARG=()
-  if [ -n "${CONFIG:-}" ]; then CFGARG=(--config "$CONFIG")
-  elif [ "$RANGE" != "15" ]; then printf '{"guidance": {"range_set_m": %s}}\n' "$RANGE" > "$OUT/app_cfg.json"; CFGARG=(--config "$OUT/app_cfg.json"); fi
+  if [ -n "${CONFIG:-}" ]; then CFGARG=(--config "$CONFIG"); cp "$CONFIG" "$OUT/app_cfg.json" 2>/dev/null || true
+  elif [ "$RANGE" != "15" ] || [ -n "${CAM_FX:-}" ] || [ "${GIMBAL:-0}" = "1" ] || [ -n "${CAM_TILT:-}" ]; then
+    # cau hinh tam tu bien moi truong: RANGE (khoang cach giu), CAM_FX (tieu cu px), CAM_TILT (do), GIMBAL=1 (khop gat)
+    RANGE="$RANGE" "$PY" -c 'import json,os
+c={"guidance":{"range_set_m":float(os.environ["RANGE"])}}
+cam={}
+if os.environ.get("CAM_FX"): cam["fx"]=cam["fy"]=float(os.environ["CAM_FX"])
+if os.environ.get("CAM_TILT"): cam["tilt_up_deg"]=float(os.environ["CAM_TILT"])
+if os.environ.get("GIMBAL")=="1": cam["gimbal_enabled"]=True
+if cam: c["camera"]=cam
+print(json.dumps(c))' > "$OUT/app_cfg.json"
+    CFGARG=(--config "$OUT/app_cfg.json")
+  fi
   (cd "$ONBOARD" && exec "$PY" -m dtrack.app "${CFGARG[@]}" --connect tcp:127.0.0.1:5770 --source sim --auto-engage \
     --sim-target tcp:127.0.0.1:5762 --sim-chaser tcp:127.0.0.1:5773 --sim-seed "$SEED" \
     --sim-blackout-file "$OUT/blackout" --stop-file "$OUT/app_stop" --log "$OUT/app_log.csv") \
