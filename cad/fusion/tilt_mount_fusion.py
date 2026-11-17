@@ -19,11 +19,14 @@ P = dict(
     sv_len=22.8, sv_wid=12.2, sv_body=15.9, sv_tab_t=2.5, sv_top=4.7,
     sv_tab_len=32.3, sv_hole_pitch=27.8, sv_shaft_off=5.5,  # truc lech tam than
     # --- In 3D ---
-    clr=0.25, wall=3.0, d_m2_tap=1.7, d_m3_tap=2.6, d_m3_free=3.3,
+    # Dung sai cho ABS (co ngot XY ~0.5-0.8 %, lo nho in ra hep hon ~0.1-0.2 mm):
+    # noi khe ho va lo so voi ban PLA/PETG (clr 0.25, lo 1.7 / 2.6 / 3.3). KHONG phong to ca mo hinh:
+    # bu co ngot tong the dat trong phan mem cat lop (tranh bu hai lan).
+    clr=0.35, wall=3.0, d_m2_tap=1.8, d_m3_tap=2.7, d_m3_free=3.5,
     # --- Gia kep camera ---
     plate_t=2.4, standoff=3.0, standoff_d=4.5,
     side_gap=2.0, side_y_front=8.0, side_z=10.0,
-    horn_recess=1.6, horn_arm_w=6.2, horn_hub_d=7.6, horn_screw_d=5.0,
+    horn_recess=1.6, horn_arm_w=6.5, horn_hub_d=7.9, horn_screw_d=5.2,
     # --- De chu U ---
     # gap_servo: tu mat trong vach servo toi mat ngoai gia kep. TowerPro MG90S: cao tong 32.1,
     # tai o ~18.5-21 tu day -> dau truc cach mat tai 11-13.6 mm, tru vach 3 mm = 8-10.6 mm.
