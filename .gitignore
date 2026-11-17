@@ -19,3 +19,13 @@ vision/weights/
 
 # File tam cua Excel
 ~$*.xlsx
+
+# File trung gian cua cac buoc kiem doc lap (khung hinh trich, ket qua tho, log)
+vision/verify*/frames/
+vision/verify*/d_frames/
+vision/verify*/det_*/
+vision/verify*/tracks/
+vision/verify*/log_*.txt
+vision/results/verify/v1rerun/raw/
+*.log
+*.err
