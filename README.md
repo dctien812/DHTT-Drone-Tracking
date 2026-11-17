@@ -1,76 +1,224 @@
-# DHTT-Drone-Tracking
+# Drone-Tracking: drone tự bám một drone khác
 
-Quad 8 inch tự bay: tự bám một mục tiêu (drone khác) bằng camera, giữ khoảng cách an toàn, điều khiển bằng ArduCopter. Giai đoạn hiện tại là mô phỏng và demo trên bàn. Chưa có lần bay thật nào.
+Dự án làm drone 8 inch tự bay theo một drone khác bằng camera và giữ khoảng cách an toàn. Hiện đang ở giai đoạn mô phỏng và demo trong phòng lab. **Chưa có lần bay thật nào.**
 
-![status](https://img.shields.io/badge/status-simulation%20%2B%20lab%20demo-orange)
-![ArduCopter](https://img.shields.io/badge/ArduCopter-4.7.2-1f6feb)
-![python](https://img.shields.io/badge/python-3.12-3776ab)
-![platform](https://img.shields.io/badge/platform-WSL2%20%2B%20SITL-lightgrey)
-![flight](https://img.shields.io/badge/hardware-not%20flown-red)
+## Tóm tắt cho mọi người
 
-> **Trạng thái (cập nhật 2026-11-17)**
-> - Mô phỏng bám, bay thẳng 10 m/s, giữ 25 m (`onboard/`): **ĐANG LÀM.** Khớp gật đạt một lần (một seed). Chưa chạy đủ 3 seed × 2 lần. Mã bám chưa được rà soát độc lập.
-> - Nhận diện trên video (`vision/`): **ĐANG LÀM.** Mục tiêu trên 40 px đạt khoảng 92%. Mục tiêu 10–40 px chưa có số đáng tin. Trên 114 video drone: 92,6% khung có phát hiện, nhưng chỉ 38% video giữ được một ID, và máy bay bị nhận thành drone.
-> - Demo lab trên PC (`lab/`): **ĐẠT** với video ghi sẵn. Trên Raspberry Pi 5 và camera thật: **CHƯA CHẠY THẬT**.
-> - Gazebo (`gazebo/`): **ĐẠT** với một máy bay. Hai máy bay: **CHƯA LÀM**. Bay thật: **CHƯA CHẠY THẬT**.
->
-> Chú thích: ĐẠT · CHƯA ĐẠT · CHƯA CHẠY THẬT · ĐANG LÀM.
+Dự án nhằm làm cho một drone tự nhìn thấy một drone khác bằng camera, bám theo và giữ khoảng cách an toàn. Trước khi đưa lên trời, mọi thứ được thử trên máy tính: trong mô phỏng (không gian ảo có vật lý), trên các video đã ghi sẵn, và trên một màn hình demo trong phòng lab. Đến nay, trong mô phỏng, drone đã bám đúng một mục tiêu bay thẳng ở tốc độ 36 km/h và giữ khoảng cách 25 m trong một lần thử; các cấu hình và tốc độ khác vẫn chưa đạt. Phần nhận diện tìm được drone ở phần lớn khung hình, nhưng hay nhầm máy bay thành drone và chưa giữ được một mục tiêu liên tục. Bước tiếp theo là chạy hệ thống trên máy tính nhỏ Raspberry Pi 5 với camera thật trong phòng lab. Mọi bước gần bay thật phải được chủ dự án duyệt từng cổng. Mục tiêu thiết kế là tốc độ tối đa 400 km/h, nhưng chưa có bằng chứng nào cho con số này.
 
-## Dự án là gì
+## Trạng thái hiện tại (cập nhật 2026-11-17)
 
-- Drone quad 8 inch tự bay theo hành trình, hoặc bám một mục tiêu bay (drone khác) và giữ khoảng cách an toàn. Dự án không có chức năng áp sát hay va chạm. Khoảng cách giữ là điều kiện an toàn bắt buộc.
-- Mẫu tham khảo là quad Blackbird trong video [The Fastest Drone Ever Flown](https://www.youtube.com/watch?v=k9n1h0rn9No).
-- **Mô phỏng trước, phần cứng sau.** Mọi thuật toán chạy qua ArduPilot SITL hoặc Gazebo trước khi lên drone.
-- **Firmware ArduPilot (ArduCopter)**, không dùng PX4.
-- **Radio** Radiomaster Pocket và RX XR4: trong lab chỉ đọc kênh RC. Khi bay thật, dự kiến dùng tay điều khiển và kính FPV để cất cánh và đưa drone vào hành trình, sau đó camera AI tự nhận diện và bám; trạm GCS (Mission Planner) để theo dõi. Phần này chưa có kế hoạch riêng.
+Chú thích: **ĐẠT** đã kiểm và đạt tiêu chí. **ĐANG LÀM** có việc đang dở. **CHƯA LÀM** chưa bắt đầu. **CHƯA CHẠY THẬT** chưa thử trên phần cứng thật.
 
-## Hướng đi và lộ trình
+| Phần | Trạng thái | Nghĩa là gì |
+|---|---|---|
+| Mô phỏng tự bám (trên máy tính) | ĐANG LÀM | Một lần thử bay thẳng 36 km/h, giữ 25 m: đạt. Khoảng cách nhỏ nhất giữa hai drone là 9,29 m (tiêu chí tối thiểu 8 m). Các cấu hình khác chưa đạt, chưa đủ 3 lần thử |
+| Nhận diện drone trên video ghi sẵn (cổng B1) | ĐẠT CÓ ĐIỀU KIỆN, chờ chủ dự án duyệt | Trên tập nhãn tay: bắt được drone ở 89 trên 99 khung có drone (88,9%). Nhầm máy bay thành drone, giữ ID kém, drone nhỏ dưới 10 px dễ sót |
+| Demo màn hình lab trên PC (video ghi sẵn) | ĐẠT | Hiện khung hình, khóa mục tiêu bằng nút bấm. Không gửi lệnh tới drone hay bộ điều khiển bay nào |
+| Demo trên Raspberry Pi 5 với camera thật | CHƯA CHẠY THẬT | Pi 5 chưa cài hệ điều hành, linh kiện đang về |
+| Mô phỏng Gazebo | ĐẠT với một drone; CHƯA LÀM với hai drone | Camera ảo chạy khoảng 10 khung hình mỗi giây |
+| Bay thật | CHƯA CHẠY THẬT | Chưa bay lần nào. Mọi thao tác ghi lên bộ điều khiển bay cần chủ dự án duyệt riêng |
 
-Quyết định ngày 2026-11-17 là hướng "dung hòa": phần tự bay bám **chỉ ở mức mô phỏng**. Phần cứng và bay thật đi theo **sáu bước có cổng duyệt B1–B6**. Mỗi bước được chủ dự án duyệt trước khi sang bước sau.
+## Việc kế tiếp và đang chờ
 
-| Bước | Nội dung | Trạng thái | Ghi chú |
+**Đang chờ chủ dự án:**
+
+1. Duyệt cổng B1 (nhận diện trên video). Kiểm tra độc lập kết luận "đạt có điều kiện", với ba điều kiện nêu trong bảng trạng thái.
+2. Báo khi bộ dữ liệu Det-Fly tải xong. Khi đó mới huấn luyện lại model, có thêm ảnh máy bay và chim làm ảnh âm.
+3. Báo khi Raspberry Pi 5 lên mạng, kèm tên đăng nhập (không kèm mật khẩu).
+4. Linh kiện về: camera Module 3 Wide, cáp 22→15 chân cho Pi 5, servo MG90S, bo PCA9685, dây nối, nguồn 5 V riêng cho servo. Tình trạng từng món xem trong Excel `bom/`.
+5. Duyệt riêng mọi thao tác ghi lên bộ điều khiển bay (nạp firmware, đổi tham số).
+
+**Việc kế tiếp, theo thứ tự:**
+
+1. Hoàn tất nghiệm thu mô phỏng: 3 seed (3 lần chạy với số ngẫu nhiên khác nhau) × 2 lần ở 10 m/s, mục tiêu bay thẳng, mất hình 3 giây, giành quyền. Chạy khi chủ dự án cho phép.
+2. Rà soát độc lập phần mã bám và bảo mật trang lab trước khi mở ra mạng.
+3. Nhận diện: kiểm lại trên tập sạch và huấn luyện lại model sau khi có dữ liệu Det-Fly.
+4. Demo lab, theo các bước dưới đây.
+
+| Bước | Việc | Trạng thái | Điều kiện để bắt đầu |
 |---|---|---|---|
-| B1 | Nhận diện và theo dõi ID trên video ghi sẵn | ĐANG LÀM | Xem mục Nhận diện |
-| B2 | Máy tính AI và camera trên bàn | CHƯA CHẠY THẬT | Pi 5 đã có. AI HAT+ chưa có |
-| B3 | Nối bộ điều khiển bay qua MAVLink, chỉ đọc | CHƯA CHẠY THẬT | Mọi thao tác ghi lên FC cần duyệt riêng |
-| B4 | Mô phỏng và an toàn | ĐANG LÀM | Xem mục Mô phỏng |
-| B5 | Thử tích hợp trên mặt đất | CHƯA CHẠY THẬT | Chốt camera và khoảng cách giữ |
-| B6 | Bay quan sát có kiểm soát | CHƯA CHẠY THẬT | Chỉ sau khi B1–B5 đạt và được duyệt |
+| S1 | Hoàn tất cổng B1 (theo dõi ID trên video) | Xong, chờ duyệt | Không còn |
+| S2 | Màn hình web hiện hình, khóa, hủy (chạy trên PC) | Xong trên PC. Chưa thử webcam, chưa thử qua mạng | Không còn |
+| S3 | Đo tốc độ trên CPU Pi 5, xuất model dạng NCNN | Chưa làm | Pi 5 cài xong hệ điều hành và lên mạng |
+| S4 | Mốc L0: chạy màn hình trên Pi 5 với camera thật; hiệu chuẩn camera bằng bàn cờ để tính góc | Chưa làm | Có camera và cáp; S3 xong |
+| S5 | Xác minh bộ điều khiển bay ở chế độ chỉ đọc, chưa có bằng chứng bộ này đã nạp ArduCopter | Chưa làm | Bộ điều khiển nối được với máy tính. Thao tác ghi cần duyệt riêng |
+| S6 | Cổng B3: nối bộ điều khiển bay, chỉ đọc dữ liệu | Chưa làm | S5 xong và cổng B3 được duyệt |
+| S7 | Khớp gật một trục in 3D, điều khiển bằng servo | Đang làm: thiết kế xong, đang in | Servo, bo điều khiển, nguồn 5 V về |
+| S8 | Mốc L1: thêm khớp gật do Pi điều khiển, đọc bộ điều khiển bay ở chế độ chỉ đọc, công tắc trên tay điều khiển | Chưa làm | S4, S5, S7 xong |
 
-## Mục tiêu thiết kế
+Các cổng duyệt B1–B6: chủ dự án duyệt từng cổng trước khi sang bước sau.
 
-Đây là mục tiêu thiết kế. Chưa có phần cứng nào đạt các con số này.
+| Cổng | Nội dung bằng lời | Trạng thái |
+|---|---|---|
+| B1 | Nhận diện và theo dõi drone trên video ghi sẵn | Đạt có điều kiện, chờ duyệt |
+| B2 | Máy tính AI và camera gắn trên bàn | Chưa. Pi 5 đã có; camera bay và AI HAT+ chưa có |
+| B3 | Nối bộ điều khiển bay, chỉ đọc dữ liệu | Chưa |
+| B4 | Mô phỏng và an toàn: tự bám, giữ khoảng cách | Đang làm, chỉ trong mô phỏng |
+| B5 | Thử tích hợp trên mặt đất: chốt camera và khoảng cách giữ | Chưa |
+| B6 | Bay quan sát có kiểm soát | Chưa. Chỉ sau B1–B5 đạt và được duyệt |
 
-| Hạng mục | Mục tiêu | Trạng thái | Ghi chú |
-|---|---|---|---|
-| Tốc độ tối đa | 400 km/h | CHƯA ĐẠT (chưa có bằng chứng) | Thay cho 350 km/h. Chốt ngày 2026-11-17 |
-| Tốc độ hành trình | 200–250 km/h | CHƯA ĐẠT (chưa có bằng chứng) | Chưa xem lại sau khi đổi tốc độ tối đa |
-| Tốc độ mục tiêu bám được | khoảng 270–290 km/h | CHƯA CHẠY THẬT | Ước tính, chưa kiểm bằng mô phỏng |
-| Khoảng cách giữ | 25 m trong nghiệm thu mô phỏng | ĐANG LÀM | Chọn từ đo 15, 25, 40 m. Chốt chính thức ở B5 |
-| Góc nghiêng | 65–75° khi bay 350–400 km/h | CHƯA CHẠY THẬT | ArduCopter giới hạn 80°. Chưa tính lại cho 400 km/h |
-| Điều khiển | Lệnh vận tốc NED, GUIDED, 10–20 Hz | ĐANG LÀM (SITL). CHƯA CHẠY THẬT trên FC | Qua pymavlink |
-| Camera mô phỏng | Khớp gật một trục điều khiển bằng servo | ĐANG LÀM | Hướng thiết kế đã chốt. Chưa lắp |
+## Giải thích thuật ngữ
 
-## Phần cứng
+| Từ | Nghĩa |
+|---|---|
+| Quad 8 inch | Drone bốn động cơ, dùng cánh quạt đường kính 8 inch (khoảng 20 cm) |
+| Bộ điều khiển bay (FC) | "Bộ não" của drone, điều khiển động cơ. Dự án dùng Matek H743-WING V3 chạy phần mềm ArduCopter |
+| Mô phỏng SITL | Chạy phần mềm bay của drone trên máy tính, không cần phần cứng |
+| Gazebo | Phần mềm mô phỏng thế giới 3D có vật lý và camera ảo |
+| Máy đồng hành | Máy tính nhỏ gắn trên drone, xử lý hình ảnh. Dự án dùng Raspberry Pi 5 |
+| Nhận diện | Tìm drone trong từng khung hình. Kết quả là một khung chữ nhật bao quanh drone |
+| Khung hình | Một ảnh trong video. Video thường có khoảng 30 khung mỗi giây |
+| ID (theo dõi) | Số gắn cho một vật qua nhiều khung hình. Đổi ID nghĩa là hệ thống coi như mất mục tiêu rồi gặp lại vật khác |
+| Ngưỡng tin cậy (0,25, 0,5) | Mức chắc chắn tối thiểu để model báo có drone. Ngưỡng thấp bắt được nhiều hơn nhưng báo nhầm nhiều hơn |
+| Recall (tỉ lệ bắt được) | Trong các khung có drone, bao nhiêu khung model thấy drone |
+| Báo động giả | Model báo có drone khi không có. Đếm theo số lần trên 100 ảnh |
+| px (điểm ảnh) | Đơn vị đo kích thước trong ảnh. Drone 10 px là rất nhỏ |
+| Khớp gật (gimbal một trục) | Giá đỡ camera ngẩng hoặc cúi bằng servo, để giữ mục tiêu trong khung hình |
+| Servo | Động cơ nhỏ quay theo góc. PCA9685 là bo mạch điều khiển nhiều servo |
+| Khoảng cách giữ | Khoảng cách drone cố giữ với mục tiêu. Nghiệm thu dùng 25 m |
+| Mất hình | Hệ thống không thấy mục tiêu trong một lúc |
+| Giành quyền | Người điều khiển lấy lại quyền điều khiển; đo bằng thời gian ngừng gửi lệnh tự động |
+| Trạm mặt đất (GCS) | Laptop theo dõi và điều khiển drone, dùng phần mềm Mission Planner |
+| Kính FPV | Kính xem hình trực tiếp từ camera drone |
+| Cổng duyệt | Điểm dừng bắt buộc để chủ dự án duyệt trước khi làm bước sau |
+| m/s và km/h | 10 m/s bằng 36 km/h |
+
+<details>
+<summary><b>Chi tiết kỹ thuật 1: mục tiêu thiết kế và phần cứng</b></summary>
+
+Mục tiêu thiết kế (chưa có phần cứng nào đạt các con số này):
+
+| Hạng mục | Mục tiêu | Trạng thái |
+|---|---|---|
+| Tốc độ tối đa | 400 km/h (thay cho 350 km/h, chốt 2026-11-17) | CHƯA ĐẠT, chưa có bằng chứng |
+| Tốc độ hành trình | 200–250 km/h | Chưa xét lại sau khi đổi tốc độ tối đa |
+| Tốc độ mục tiêu bám được | khoảng 270–290 km/h | Ước tính, chưa kiểm bằng mô phỏng |
+| Góc nghiêng | 65–75° khi bay 350–400 km/h | ArduCopter giới hạn 80°. Chưa tính lại cho 400 km/h |
+| Điều khiển | Lệnh vận tốc NED, chế độ GUIDED, 10–20 Hz | Đang làm trong mô phỏng. Chưa chạy thật trên bộ điều khiển bay |
+
+Phần cứng:
 
 | Hạng mục | Lựa chọn | Trạng thái |
 |---|---|---|
-| Flight controller | Matek H743-WING V3 (vào 9–36 V, cảm biến dòng khoảng 132 A) | ĐÃ CÓ |
-| Máy tính đồng hành | Raspberry Pi 5 8 GB kèm tản nhiệt | ĐÃ CÓ |
-| Tăng tốc AI | AI HAT+ (Hailo-8, 26 TOPS) | CHƯA CÓ. Lab chạy nhận diện bằng CPU của Pi |
-| Camera bay | Raspberry Pi Global Shutter (IMX296, 1456×1088, ngàm CS), lens 6 mm hoặc 8 mm | CHƯA CÓ. Khan hàng ở các nguồn đã tra |
-| Camera lab | Raspberry Pi Camera Module 3 Wide | Đã chọn cho lab, đang đặt mua. Khác camera dự kiến bay |
-| Khung | Apex HD 8 inch 362 mm làm đế, vỏ in 3D kiểu tên lửa | DỰ KIẾN. Số liệu khung chưa xác minh |
-| Động lực | Motor 3110 **không đủ** (khoảng 0.9 kW mỗi cái). Ứng viên 3115, 3120, 3220 kèm ESC 200 A | CHƯA CHỐT. Chốt sau chặng 3 |
-| Radio (lab) | Radiomaster Pocket + RX XR4 | ĐÃ CÓ |
-| Sạc pin | ToolkitRC M8D | ĐÃ CÓ |
-| Trạm GCS | Mission Planner trên laptop Windows 11, 10–13 inch cảm ứng | CHƯA CHỌN MÁY |
+| Bộ điều khiển bay | Matek H743-WING V3 | Đã có |
+| Máy đồng hành | Raspberry Pi 5 8 GB, có tản nhiệt | Đã có |
+| Tăng tốc AI | AI HAT+ (Hailo-8, 26 TOPS) | Chưa có. Lab chạy nhận diện bằng CPU của Pi |
+| Camera bay | Raspberry Pi Global Shutter (IMX296, 1456×1088), lens 6 mm hoặc 8 mm | Chưa có, khan hàng ở các nguồn đã tra |
+| Camera lab | Raspberry Pi Camera Module 3 Wide | Đang mua, chưa về. Khác camera dự kiến bay |
+| Khung | Apex HD 8 inch làm đế, vỏ in 3D kiểu tên lửa | Dự kiến, số liệu khung chưa xác minh |
+| Động cơ | Động cơ 3110 không đủ (khoảng 0,9 kW mỗi cái). Ứng viên 3115, 3120, 3220 | Chưa chốt, sau chặng 3 |
+| Radio (lab) | Radiomaster Pocket + RX XR4 | Đã có. Trong lab chỉ đọc kênh RC |
+| Sạc pin | ToolkitRC M8D | Đã có |
+| Trạm GCS | Mission Planner trên laptop Windows 11 | Chưa chọn máy |
 
-Nguồn trạng thái phần cứng: chủ dự án và `.office/ledger.md` (2026-11-17).
+Nguồn: sổ ghi `.office/ledger.md` (2026-11-17). Mua sắm chi tiết xem Excel `bom/`.
 
-## Kiến trúc phần mềm bám
+</details>
 
-Mã nằm trong `onboard/dtrack/`. Hiện `capture` và `detect` gộp thành giao diện `DetectionSource` trong `app.py`, chưa có file riêng.
+<details>
+<summary><b>Chi tiết kỹ thuật 2: mô phỏng</b></summary>
+
+Kịch bản nghiệm thu: mục tiêu bay thẳng ở 10 m/s, tăng tốc lúc đầu, phanh khoảng 8 m/s² lúc cuối. Drone bám bằng khớp gật, giữ 25 m.
+
+Tiêu chí: sai số trung bình dưới 3 m trong cửa sổ đo 120 giây; khoảng cách thật không dưới 8 m suốt chuyến; bám ít nhất 90% thời gian; chạy 3 seed, mỗi seed 2 lần. Thêm: mất hình 3 giây (khoảng cách nhỏ nhất không dưới 8 m và bắt lại được) và giành quyền (ngừng lệnh dưới 0,1 s). Tiêu chí cũ (đổi hướng, 15 m) đã thay ngày 2026-11-17.
+
+Kết quả, mỗi ô một lần thử, seed 1 (nguồn: file `result.txt` của từng lần chạy mô phỏng; thư mục kết quả không đưa lên GitHub):
+
+| Cấu hình | Giữ 15 m | Giữ 25 m | Giữ 40 m |
+|---|---|---|---|
+| Camera cố định, lens 6 mm | CHƯA ĐẠT: sai số TB 0,32 m, nhỏ nhất 5,40 m | CHƯA ĐẠT: TB 0,43 m, nhỏ nhất 7,40 m | CHƯA ĐẠT: TB 3,46 m |
+| Khớp gật (servo) | CHƯA ĐẠT: TB 0,32 m, nhỏ nhất 5,81 m | **ĐẠT** (một lần): TB 0,57 m, nhỏ nhất 9,29 m, bám 100% | CHƯA ĐẠT: TB 3,90 m |
+| Lens 4 mm | — | CHƯA ĐẠT: TB 0,72 m, nhỏ nhất 7,07 m | — |
+
+Nghĩa là gì: TB là sai số trung bình so với khoảng cách đặt (càng nhỏ càng tốt). Nhỏ nhất là khoảng cách gần nhất giữa hai drone trong suốt chuyến (không được dưới 8 m). Bám 100% nghĩa là suốt thời gian đo, hệ thống luôn ở trạng thái đang bám.
+
+| Kiểm khác | Kết quả | Nghĩa là gì | Trạng thái |
+|---|---|---|---|
+| Mất hình 3 s (khớp gật, 25 m) | nhỏ nhất 11,12 m, bám 97,5% | Mất hình 3 giây, khoảng cách vẫn không dưới 8 m | ĐẠT (một lần) |
+| Ca có rẽ (khớp gật, 25 m) | nhỏ nhất 8,14 m | Mục tiêu đổi hướng. Chỉ để tham khảo | Tham khảo |
+| Giành quyền: ngừng gửi lệnh | 0,021 s | Ngừng lệnh nhanh hơn ngưỡng 0,1 s | ĐẠT (cấu hình trước khi chốt khớp gật) |
+| Khớp gật, 20 m/s | nhỏ nhất 1,64–3,74 m khi phanh | Quá gần. Tốc độ 20 m/s đã bỏ khỏi nghiệm thu này | CHƯA ĐẠT, ngoài phạm vi |
+
+Lần ĐẠT ở 25 m: mục tiêu ra khỏi khung hình 2 lần, tổng 5,36 giây, đều trong lúc phanh cuối. Đây là điểm cần theo dõi khi tăng tốc.
+
+Nguyên nhân các lần chưa đạt (điều tra ngày 2026-11-17): khi mất mục tiêu, drone đứng yên thay vì bay tiếp theo vận tốc ước lượng; giới hạn phanh quá thấp; vòng giữ mục tiêu giữa khung đẩy mục tiêu ra mép; gia tốc ngang không đủ khi rẽ ở 20 m/s. Một phần đã sửa trong mã. Lần sửa bộ điều khiển trước đó (kịch bản có rẽ, chưa chạy kịch bản bay thẳng) vẫn cho khoảng cách nhỏ nhất 5,27–5,89 m khi mục tiêu phanh gấp.
+
+Số lần kiểm: `pytest` của `onboard/` cho 205 passed (theo sổ ghi 2026-11-17). Chưa có lần nghiệm thu 3 seed × 2 lần nào hoàn tất.
+
+Bảng khả thi tốc độ (chỉ tính toán, không mô phỏng). Nguồn: `onboard/docs/feasibility_speed.md`, tạo bởi `onboard/simtools/feasibility_table.py`. Công thức: khoảng cách an toàn = v·τ + v²/(2a_drone bám) − v²/(2a_mục tiêu) + sai số + 8 m. Giả định τ = 0,35 s và a = 4,1 m/s² lấy từ mô phỏng quad 0,8 kg, **không phải drone thật**. Số bậc FC gốc nằm trong file kết quả thử bậc của mô phỏng (không đưa lên GitHub). Số đo chỉ đến 10 m/s, phần còn lại là ngoại suy.
+
+| Tốc độ | Khoảng cách an toàn (mục tiêu phanh 8 m/s², lens 6 mm) | Mục tiêu còn bao nhiêu px |
+|---|---|---|
+| 10 m/s (36 km/h) | 17,9 m | khoảng 29 px |
+| 20 m/s (72 km/h) | 41,3 m | khoảng 13 px, dưới ngưỡng 20 px |
+| 30 m/s (108 km/h) | 82,0 m | dưới ngưỡng 20 px |
+| 111 m/s (400 km/h) | không có nghiệm | cách "bay sau, giữ khoảng cách" không còn dùng được |
+
+Nghĩa là gì: ở tốc độ cao, drone phải giữ khoảng cách rất xa, và mục tiêu trở nên quá nhỏ trong ảnh để nhận diện. Tốc độ cao nhất mà mục tiêu còn ít nhất 20 px là khoảng 14 m/s (51 km/h). Tốc độ cao cần phương án khác, chưa chọn.
+
+</details>
+
+<details>
+<summary><b>Chi tiết kỹ thuật 3: nhận diện drone (vision/)</b></summary>
+
+Model `ft_v8n`: YOLOv8n tinh chỉnh trên tập DUT Anti-UAV, 20 vòng huấn luyện, chạy bằng CPU. Chưa đo trên Raspberry Pi 5 hay chip Hailo.
+
+Nhận diện trên ảnh (tập test, nguồn `vision/results/verify/analysis_out.txt`):
+
+| Tập | Ngưỡng | Recall | Báo động giả / 100 ảnh | Nghĩa là gì |
+|---|---|---|---|---|
+| Tập test đầy đủ | 0,25 | 0,93 | 16,3 | Lạc quan: 67,6% ảnh test có ảnh train gần giống cảnh |
+| Tập test đầy đủ | 0,5 | 0,90 | 4,6 | Như trên |
+| Tập sạch (684 ảnh, 693 mục tiêu, phần lớn trên 40 px) | 0,25 | 0,92 | 29,8 | Cứ 100 ảnh có khoảng 30 ảnh báo nhầm có drone |
+| Tập sạch | 0,5 | 0,87 | 8,6 | Cứ 100 ảnh có khoảng 9 ảnh báo nhầm |
+
+Theo cỡ mục tiêu trên tập sạch: trên 40 px, recall 0,92 (ngưỡng 0,25) và 0,87 (ngưỡng 0,5). Từ 20 đến 40 px, recall 0,93 và 0,89, nhưng chỉ có 28 ảnh, khoảng tin cậy 0,77–0,98. Từ 10 đến 20 px, không có số đáng tin (1 ảnh).
+
+Tiêu chí của kế hoạch: recall ≥ 0,90 ở 20–40 px, và tối đa 20 báo động giả / 100 ảnh. **Chưa đạt**: 0,89 ở ngưỡng 0,5 và 29,8 báo động giả ở ngưỡng 0,25.
+
+Kiểm tra độc lập cổng B1, nhãn tay trên 120 khung (99 có drone, 20 máy bay, 1 trống; gán bằng mắt, một người, trước khi xem kết quả model). Nguồn: `vision/results/verify_b1/c_score.md`, `vision/results/verify_b1/VERIFY_B1.md`.
+
+| Ngưỡng | Bắt được khung có drone | Trong các phát hiện trên khung có drone, tỉ lệ đúng drone | Máy bay bị gọi là drone |
+|---|---|---|---|
+| 0,25 | 88/99 = 88,9% (khoảng tin cậy 81,2–93,7%) | 89/92 = 96,7% | 20/20 khung |
+| 0,5 | 81/99 = 81,8% | 81/81 = 100% | 19/20 khung |
+| 0,25, chỉ 65 khung chắc | 64/65 = 98,5% | 64/65 = 98,5% | — |
+
+Nghĩa là gì: ở ngưỡng 0,25, cứ 100 khung có drone thì model thấy drone ở khoảng 89 khung. Trong các khung có drone, 96,7% số khung bao được vẽ là đúng drone. Con số 96,7% **không tính** khung máy bay, nên không được hiểu là model nhận đúng mọi thứ. Gần như mọi khung máy bay đều bị gọi là drone. Khung bỏ sót chủ yếu là drone khoảng 8 px.
+
+Theo dõi ID trên 119 video ghi sẵn (114 video drone, 4 video máy bay, khoảng 10 giây mỗi video, không có nhãn). Ngưỡng 0,25, ByteTrack. Số do người làm, đã được tái lập độc lập. Nguồn: `vision/results/b1/B1_TABLES.md`, `vision/results/b1/B1_REPORT.md`.
+
+| Số đo (114 video drone) | Cắt vùng 320 px quanh mục tiêu | Cả khung hình |
+|---|---|---|
+| Khung có phát hiện | 92,6% | 91,2% |
+| Khung có đúng một mục tiêu được theo dõi | 89,7% | 82,9% |
+| Video giữ được một ID suốt đoạn | 38% | 30% |
+| Số ID trung bình mỗi video (lý tưởng là 1) | 3,2 | 5,3 |
+
+Nghĩa là gì: model thấy drone ở đa số khung, nhưng cùng một drone thường bị gắn nhiều ID hơn một, nên khi ID đổi, khóa mục tiêu bị rớt. Trên 4 video máy bay (1274 khung), model báo "drone" ở 100% khung (ngưỡng 0,25). Model cũ AI-6 báo 97,7%, model AI-5 báo 1,4%. Tốc độ trên PC khoảng 26 ms mỗi khung (không phải Pi 5).
+
+Hai model `best.pt` cũ có recall 0,38–0,46 trên tập test, không dùng. Không tải trọng số của bên thứ ba.
+
+</details>
+
+<details>
+<summary><b>Chi tiết kỹ thuật 4: màn hình lab và Gazebo</b></summary>
+
+Màn hình lab (`lab/`): đọc hình từ file video hoặc webcam, nhận diện và theo dõi ID bằng YOLO, phát trang web có khung và ID. Bấm vào khung để khóa, có nút Khóa và Hủy. Ảnh chụp sau khi khóa: `lab/docs/lab_sau_khoa.png`. Số đo trên PC do chương trình tự báo: 21,5 khung/giây, trễ 64 ms, chưa đo lại. Chưa thử webcam, chưa thử qua mạng, chưa có ảnh từ Pi 5.
+
+Mở ra mạng nội bộ bắt buộc có mật khẩu (từ 8 ký tự), đặt ngoài thư mục git. Sai mật khẩu 5 lần mỗi phút từ một IP thì bị chặn 1 phút. Chưa rà soát bảo mật độc lập.
+
+Khớp gật (`cad/`): thiết kế trong Fusion (`cad/fusion/khop_gat_lab.step`), bản CadQuery dự phòng trong `cad/tilt_mount/`. Không va chạm ở góc −60° đến +60° (kiểm trong mô hình). Kích thước linh kiện chưa đối chiếu vật thật. File in 3D: `STL/de_chu_U.stl`, `STL/gia_kep_camera.stl`. Chưa lắp.
+
+Gazebo (`gazebo/`): Gazebo Harmonic (gz sim 8.15.0) và ardupilot_gazebo chạy trên WSL2 Ubuntu-24.04. Cần đặt biến môi trường `GALLIUM_DRIVER=d3d12` để dùng card đồ họa; nếu không, mô phỏng rơi về CPU. Camera 640×480 khoảng 10 khung/giây. Hệ số thời gian thực 1,00 khi máy nhẹ, 0,7–0,9 khi máy đang tải nặng (nghĩa là mô phỏng chậm hơn thực tế một chút). Chưa làm: hai drone, cửa sổ giao diện thật, đo độ trễ hình. Chi tiết: `gazebo/README.md`.
+
+</details>
+
+<details>
+<summary><b>Chi tiết kỹ thuật 5: phần mềm bám (onboard/)</b></summary>
+
+Gói `onboard/dtrack`: ghép các module qua vòng lặp chính, ra lệnh vận tốc cho drone ở chế độ GUIDED qua pymavlink. Hằng số MAVLink đã kiểm đối chiếu mã ArduPilot 4.7.2 (xem `onboard/README.md`).
 
 ```mermaid
 flowchart LR
@@ -88,7 +236,7 @@ flowchart LR
     TRK -->|"TrackState"| SUP
     TRK -.->|"gồm"| RNG
     SUP -.->|"gồm"| GUI
-    FC -->|"telemetry: vị trí, tư thế, mode"| MAV
+    FC -->|"telemetry: vị trí, tư thế, chế độ"| MAV
     MAV -->|"OwnState"| TRK
     MAV -->|"tình trạng liên kết"| SUP
     SUP -->|"lệnh vận tốc"| MAV
@@ -98,7 +246,7 @@ flowchart LR
 
 | Module | File | Vai trò |
 |---|---|---|
-| Hợp đồng dữ liệu | `onboard/dtrack/types.py` | `Detection`, `TrackState`, `OwnState`, `GuidanceCommand`; thế giới NED, thân FRD |
+| Hợp đồng dữ liệu | `onboard/dtrack/types.py` | Khai báo kiểu dữ liệu, hệ tọa độ NED và thân FRD |
 | Hình học | `onboard/dtrack/geometry.py` | Quaternion, chiếu tia camera sang NED |
 | Bám | `onboard/dtrack/tracker.py` | Bộ lọc Kalman bám một mục tiêu |
 | Khoảng cách | `onboard/dtrack/range_estimator.py` | Ước lượng từ kích thước khung bao (camera đơn không đo sâu trực tiếp) |
@@ -108,199 +256,74 @@ flowchart LR
 | Nhật ký | `onboard/dtrack/logger.py` | Ghi CSV mỗi chu kỳ |
 | Vòng lặp | `onboard/dtrack/app.py` | Ghép các module; `config.py` nạp cấu hình và hồ sơ nghiệm thu |
 
-## Trạng thái từng phần
+Hằng số cấu hình chính nằm trong `onboard/dtrack/config.py`. Hồ sơ nghiệm thu: `accept_gimbal_r25`.
 
-| Phần | Trạng thái | Số đo | Nguồn |
-|---|---|---|---|
-| `onboard/` pytest | ĐẠT (kiểm đơn vị) | 205 passed | sổ ghi 2026-11-17 (chạy lại) |
-| `onboard/` khớp gật, giữ 25 m, 10 m/s | ĐANG LÀM | một lần đạt: TB 0,57 m, min 9,29 m, bám 100% | sổ ghi 2026-11-17 |
-| `onboard/` nghiệm thu 3 seed × 2 lần | CHƯA CHẠY THẬT | chưa có lần nào hoàn tất | sổ ghi 2026-11-17 |
-| `onboard/` camera cố định, lens rộng | CHƯA ĐẠT | xem bảng Mô phỏng | sổ ghi 2026-11-17 |
-| `sim/` chặng 1 (cũ, ngừng sửa) | CHƯA ĐẠT ở phanh cuối | trong cửa sổ 120 s: ĐẠT. Sau cửa sổ, khoảng cách thật tụt còn 0,14–6,61 m | sổ ghi 2026-11-16 |
-| `vision/` nhận diện | ĐANG LÀM | xem mục Nhận diện | `vision/results/SUMMARY.md` |
-| `lab/` trên PC | ĐẠT (video ghi sẵn) | 45 passed; 21,5 khung/giây, trễ 64 ms (số tự báo cáo, chưa đo lại) | sổ ghi 2026-11-17 |
-| `lab/` trên Pi 5, camera thật | CHƯA CHẠY THẬT | — | — |
-| `gazebo/` một máy bay | ĐẠT | chạy được, camera 640×480 ~10 khung/giây | `gazebo/README.md`, sổ ghi 2026-11-17 |
-| `gazebo/` hai máy bay | CHƯA LÀM | — | — |
-| `cad/` khớp gật | ĐẠT (thiết kế) | không va chạm ở −60° đến +60° | sổ ghi 2026-11-17 |
-| `cad/` in và lắp | ĐANG LÀM | người dùng đang in; kích thước chưa đo vật thật | sổ ghi 2026-11-17 |
-| `gcs/` logic | ĐẠT (kiểm logic) | PASS=171, FAIL=0 | chạy lại 2026-11-17 |
-| `gcs/` cài thật | CHƯA CHẠY THẬT | chưa có laptop đích; chữ ký gói chưa kiểm | `gcs/README.md` |
-| Phần cứng bay | CHƯA CHẠY THẬT | chưa bay lần nào | — |
+</details>
 
-## Mô phỏng
+<details>
+<summary><b>Chi tiết kỹ thuật 6: cấu trúc thư mục, lệnh chạy, an toàn, giấy phép</b></summary>
 
-### Nghiệm thu hiện tại
-
-Kịch bản: mục tiêu **bay thẳng** ở 10 m/s, tăng tốc lúc đầu, phanh khoảng 8 m/s² lúc cuối. Drone bám bằng khớp gật, giữ 25 m.
-
-Tiêu chí: sai số trung bình dưới 3 m trong cửa sổ đo; khoảng cách thật không dưới 8 m suốt chuyến (kể cả lúc mục tiêu phanh); bám ít nhất 90%. Chạy 3 seed, mỗi seed 2 lần. Thêm mất hình 3 s (min không dưới 8 m, bắt lại được) và giành quyền (ngừng lệnh dưới 0,1 s). Tiêu chí cũ (đổi hướng, 15 m) đã thay ngày 2026-11-17.
-
-Trạng thái: **ĐANG LÀM.**
-
-| Cấu hình (10 m/s, seed 1, 1 lần mỗi ô) | Giữ 15 m | Giữ 25 m | Giữ 40 m |
-|---|---|---|---|
-| Camera cố định, lens 6 mm | CHƯA ĐẠT: TB 0,32 m, min 5,40 m | CHƯA ĐẠT: TB 0,43 m, min 7,40 m | CHƯA ĐẠT: TB 3,46 m |
-| Khớp gật (servo) | CHƯA ĐẠT: TB 0,32 m, min 5,81 m | **ĐẠT** (một lần): TB 0,57 m, min 9,29 m, bám 100% | CHƯA ĐẠT: TB 3,90 m |
-| Lens 4 mm | — | CHƯA ĐẠT: TB 0,72 m, min 7,07 m | — |
-
-| Kiểm khác | Kết quả | Trạng thái |
-|---|---|---|
-| Mất hình 3 s (khớp gật, 25 m, 10 m/s) | min 11,12 m, bám 97,5% | ĐẠT (một lần) |
-| Ca có rẽ (khớp gật, 25 m) | min 8,14 m | Số tham khảo, không thuộc tiêu chí |
-| Giành quyền: ngừng gửi lệnh | 0,021 s | ĐẠT (cấu hình trước khi chốt khớp gật) |
-| Khớp gật, 20 m/s | TB 0,42–1,14 m nhưng min 1,64–3,74 m ở pha phanh | CHƯA ĐẠT. Ngoài phạm vi nghiệm thu hiện tại |
-| 3 seed × 2 lần ở 25 m; rà soát độc lập mã bám | chưa chạy, chưa có | CHƯA CHẠY THẬT |
-
-Nguyên nhân các lần thất bại (điều tra 2026-11-17, chưa có phép thử vòng kín xác nhận đủ): khi mất mục tiêu, drone đứng yên thay vì bay tiếp theo vận tốc ước lượng. Giới hạn phanh 0,8 m/s² quá thấp. Vòng giữ mục tiêu giữa ảnh bằng độ cao đẩy mục tiêu ra mép khung. Gia tốc ngang không đủ khi rẽ ở 20 m/s. Một phần đã sửa trong mã. Lệnh chạy hàng loạt `onboard/simtools/run_acceptance.sh` chưa hoàn tất lần nào.
-
-### Bảng khả thi tốc độ (chỉ tính, không mô phỏng)
-
-Nguồn: `onboard/docs/feasibility_speed.md`, tạo bởi `onboard/simtools/feasibility_table.py`. Công thức: khoảng cách an toàn = v·τ + v²/(2a_chaser) − v²/(2a_mục tiêu) + sai số + 8 m. Giả định τ = 0,35 s và a_chaser = 4,1 m/s² lấy từ SITL quad 0,8 kg, **không phải máy thật**. Số đo chỉ đến 10 m/s, phần còn lại là ngoại suy.
-
-| Tốc độ | Mục tiêu phanh 8 m/s², lens 6 mm | Ghi chú |
-|---|---|---|
-| 10 m/s (36 km/h) | khoảng cách an toàn 17,9 m | Mục tiêu còn khoảng 29 px |
-| 20 m/s (72 km/h) | 41,3 m | Mục tiêu còn khoảng 13 px, dưới ngưỡng 20 px |
-| 30 m/s (108 km/h) | 82,0 m | Dưới ngưỡng 20 px |
-| 400 km/h (111 m/s) | không có nghiệm | Cách "bay sau, giữ khoảng cách" không còn dùng được |
-
-Tốc độ cao nhất mà mục tiêu còn ít nhất 20 px là khoảng 14 m/s (51 km/h) khi mục tiêu phanh 8 m/s². Tốc độ cao cần phương án khác, chưa chọn.
-
-## Nhận diện (`vision/`)
-
-Model `ft_v8n`: YOLOv8n tinh chỉnh trên tập DUT Anti-UAV, 20 epoch, chạy CPU. Chưa đo trên Raspberry Pi 5 hay Hailo.
-
-| Số đo | Giá trị | Trạng thái | Nguồn |
-|---|---|---|---|
-| Ảnh test có ảnh train gần trùng cảnh | 67,6% (1486/2200) | Rò rỉ dữ liệu, số toàn tập test lạc quan | `vision/results/verify/` (kiểm 2026-11-17) |
-| Tập sạch (684 ảnh, chủ yếu mục tiêu trên 40 px), ngưỡng 0,25 | recall 0,92; 29,8 báo động giả / 100 ảnh | Đáng tin ở mức tập sạch | `vision/results/verify/analysis_out.txt` |
-| Tập sạch, ngưỡng 0,5 | recall 0,87; 8,6 báo động giả / 100 ảnh | Đáng tin ở mức tập sạch | như trên |
-| Mục tiêu 10–40 px | chưa có số đáng tin (28 mẫu cho 20–40 px, 1 mẫu cho 10–20 px) | CHƯA CHẠY THẬT | như trên |
-| Tiêu chí: recall ≥ 0,90 ở 20–40 px, tối đa 20 báo động giả / 100 ảnh | 0,93 nhưng 29,8 báo động giả ở 0,25; 0,89 ở 0,5 | CHƯA ĐẠT | `vision/results/verify/analysis_out.txt`, sổ ghi 2026-11-17 |
-| Video máy bay (4 video) | model gắn nhãn "drone" ở mọi khung được chấm | CHƯA ĐẠT. Cần ảnh âm khi huấn luyện lại | sổ ghi 2026-11-17 |
-| Hai model `best.pt` cũ | recall 0,38–0,46 trên tập test | CHƯA ĐẠT. Không dùng | sổ ghi 2026-11-17 |
-
-### Theo dõi ID trên video (B1)
-
-Chạy trên 119 video ghi sẵn (114 video drone, 4 video máy bay; 640×512, khoảng 10 s mỗi video; không có nhãn). Ngưỡng 0,25, ByteTrack. Số của người làm, đang được đo lại độc lập. Bảng đầy đủ: `vision/results/b1/B1_TABLES.md`.
-
-| Số đo (114 video drone) | Cắt vùng 320 quanh mục tiêu | Đưa cả khung hình |
-|---|---|---|
-| Khung có phát hiện | 92,6% | 91,2% |
-| Khung có đúng một mục tiêu được theo dõi | 89,7% | 82,9% |
-| Video giữ được một ID suốt đoạn | 38% | 30% |
-| Số ID trung bình mỗi video (lý tưởng là 1) | 3,2 | 5,3 |
-
-- **CHƯA ĐẠT, giữ ID:** phần lớn video bị tách thành nhiều ID; khi ID đổi thì khóa mục tiêu bị rớt.
-- **CHƯA ĐẠT, nhầm lớp:** trên 4 video máy bay (1274 khung), model gắn nhãn "drone" ở 1274/1274 khung. Cần ảnh âm (máy bay, chim) khi huấn luyện lại.
-- Tốc độ trên PC (không phải Raspberry Pi): khoảng 26 ms mỗi khung.
-- Chưa có precision và recall vì video không có nhãn.
-
-Bộ Det-Fly đang tải, chưa đưa vào kiểm chứng.
-
-## Demo lab (`lab/`)
-
-Chương trình Python đọc hình (video hoặc webcam), nhận diện và theo dõi ID bằng YOLO, phát trang web có khung và ID. Người dùng bấm để khóa mục tiêu, có nút Khóa và Hủy. Lab **chỉ hiển thị và chọn mục tiêu, không gửi lệnh tới drone, bộ điều khiển bay hay thiết bị nào.** Ảnh chụp sau khi khóa: `lab/docs/lab_sau_khoa.png`.
-
-- **Mốc L0**: Raspberry Pi 5, camera, trang web hiện hình, nút Khóa. Chưa có servo, chưa có FC.
-- **Mốc L1**: thêm khớp gật in 3D có servo do Pi điều khiển (qua bo PCA9685, không qua FC), đọc bộ điều khiển bay ở chế độ chỉ đọc, công tắc trên tay điều khiển để khóa và hủy.
-
-| Bước | Nội dung | Trạng thái |
-|---|---|---|
-| S1 | Hoàn tất B1: theo dõi ID trên video, video kết quả, số đo, video không có drone | Đã chạy xong; đang đo lại độc lập. Hai điểm chưa đạt: giữ ID, nhầm máy bay thành drone |
-| S2 | Trang web hiện hình, khóa, hủy (`lab/`) | ĐẠT trên PC. Người dùng đã mở được trang trên trình duyệt. Chưa kiểm webcam, chế độ mạng |
-| S3 | Đo trên CPU Pi 5, xuất model NCNN | CHƯA CHẠY THẬT |
-| S4 | L0 trên Pi 5, hiệu chuẩn camera bằng bàn cờ để tính góc | CHƯA CHẠY THẬT |
-| S5 | Xác minh FC chỉ đọc (chưa có bằng chứng FC đã nạp ArduCopter) | CHƯA CHẠY THẬT. Thao tác ghi cần duyệt riêng |
-| S6 | B3: nối bộ điều khiển bay, chỉ đọc | CHƯA CHẠY THẬT |
-| S7 | Khớp gật một trục in 3D, điều khiển bằng servo | ĐANG LÀM. Thiết kế đạt, đang in, chưa lắp |
-| S8 | L1 | CHƯA CHẠY THẬT |
-
-Camera lab khác camera dự kiến bay, nên kết quả lab không thay cho B2 và B5. Khớp gật: thiết kế Fusion trong `cad/fusion/` (khối `khop_gat_lab.step`), bản CadQuery dự phòng trong `cad/tilt_mount/`. File in trong `STL/`: `de_chu_U.stl`, `gia_kep_camera.stl`. Kích thước linh kiện chưa đối chiếu vật thật.
-
-## Gazebo (`gazebo/`)
-
-Gazebo Harmonic (gz sim 8.15.0) và `ardupilot_gazebo` (commit f116b03) chạy trong WSL2 Ubuntu-24.04. Dựng hình cần `GALLIUM_DRIVER=d3d12`, nếu không Mesa rơi về CPU. Camera 640×480 ~10 khung/giây; hệ số thời gian thực 1,00 khi máy nhẹ, 0,7–0,9 khi máy tải nặng. **Chưa làm:** hai máy bay, cửa sổ giao diện thật, đo độ trễ hình.
-
-## Cấu trúc thư mục
+Cấu trúc:
 
 ```
 Drone-Tracking/
-├── HANDOFF.md                 bản bàn giao: mục tiêu, quyết định, lệnh, lộ trình
-├── .gitignore                 loại out/, *.BIN, __pycache__, dữ liệu và trọng số
-├── onboard/                   phần mềm bám (Python): dtrack/, simtools/, docs/, tests/
-├── sim/                       chặng 1 cũ, đã ngừng sửa (README.md)
-├── lab/                       màn hình lab trên PC (README.md, labview/, tests/, run_demo.sh)
-├── vision/                    nhận diện trên video (README.md, results/)
-├── gazebo/                    Gazebo + ArduPilot (README.md, scripts/, results/)
-├── cad/                       khớp gật: tilt_mount/ (CadQuery), fusion/ (Fusion)
-├── STL/                       file in 3D
-├── gcs/                       bộ cài trạm GCS, PowerShell 5.1 (README.md)
-├── bom/                       Excel linh kiện: build_bom.py, bom_data.json
-└── .office/                   sổ ghi (ledger.md) và tiến trình (progress/)
+├── README.md, HANDOFF.md        tài liệu chính và bản bàn giao
+├── .gitignore                   loại out/, *.BIN, __pycache__, dữ liệu và trọng số
+├── onboard/                     phần mềm bám (Python): dtrack/, simtools/, docs/, tests/
+├── sim/                         chặng 1 cũ, đã ngừng sửa (README.md)
+├── lab/                         màn hình lab trên PC (README.md, labview/, tests/, run_demo.sh)
+├── vision/                      nhận diện trên video (README.md, scripts/, results/)
+├── gazebo/                      Gazebo + ArduPilot (README.md, scripts/, results/)
+├── cad/                         khớp gật: tilt_mount/ (CadQuery), fusion/ (Fusion)
+├── STL/                         file in 3D
+├── gcs/                         bộ cài trạm GCS, PowerShell 5.1 (README.md)
+├── bom/                         Excel linh kiện: build_bom.py, bom_data.json
+└── .office/                     sổ ghi (ledger.md) và tiến trình (progress/)
 ```
 
-Thư mục `out/` (kết quả mô phỏng), dữ liệu, trọng số và kết quả nhận diện không đưa lên GitHub.
-
-## Bắt đầu nhanh
-
-**Yêu cầu:** Windows 11 với WSL2, distro `Ubuntu-24.04`, user có sudo. ArduPilot tag `Copter-4.7.2` đã build SITL (dựng bằng `sim/setup_wsl.sh`). Venv `~/venv-ardupilot` với pymavlink, MAVProxy, numpy, pytest, openpyxl. Màn hình lab và nhận diện dùng venv riêng `~/venv-vision`.
-
-Thay `<repo-wsl>` bằng đường dẫn WSL tới thư mục repo (dạng `/mnt/<ổ đĩa>/...`). Lệnh chạy từ PowerShell, chuỗi bash đặt trong dấu nháy đơn.
+Lệnh chạy (thay `<repo-wsl>` bằng đường dẫn WSL tới thư mục repo, dạng `/mnt/<ổ>/...`):
 
 ```powershell
-# Kiểm không còn SITL nào chạy trước mỗi lần thử (mã thoát 1 = không có)
+# Kiểm không còn mô phỏng nào chạy (mã thoát 1 = không có)
 wsl -d Ubuntu-24.04 -- pgrep arducopter
 
-# Test phần mềm bám (kỳ vọng: 205 passed)
-wsl -d Ubuntu-24.04 -- bash -lc 'cd <repo-wsl>/onboard; python -m pytest -q'
+# Kiểm phần mềm bám (kỳ vọng theo sổ ghi: 205 passed)
+wsl -d Ubuntu-24.04 -- bash -lc 'cd <repo-wsl>/onboard && ~/venv-ardupilot/bin/python -m pytest -q'
 
-# Vòng kín khớp gật, giữ 25 m, bay thẳng 10 m/s, seed 1 (mã thoát 0 = PASS)
+# Vòng kín khớp gật, giữ 25 m, bay thẳng 10 m/s, seed 1 (mã thoát 0 = đạt)
 wsl -d Ubuntu-24.04 -- bash -lc 'PROFILE=accept_gimbal_r25 SEED=1 SCENARIO=none STRAIGHT=1 bash <repo-wsl>/onboard/simtools/run_closed_loop.sh 10'
 
 # Màn hình lab trên PC với video ghi sẵn (chỉ localhost, mở http://localhost:8080/)
 wsl -d Ubuntu-24.04 -- bash <repo-wsl>/lab/run_demo.sh [video] [cổng]
 
-# Test logic bộ cài GCS (chạy từ thư mục repo trên Windows, không cần admin)
+# Kiểm bộ cài GCS (không cần quyền admin)
 powershell -ExecutionPolicy Bypass -File gcs\tests\Test-GcsLogic.ps1
 ```
 
-Lệnh vòng kín trên chưa chạy lại trong lần viết README này. Kiểm tra trước khi dùng. Không chạy `gcs\Install-Gcs.ps1` trên máy cá nhân: bộ cài chỉ dành cho laptop GCS riêng, cần quyền admin. Đọc `gcs/README.md` trước.
+Lệnh vòng kín trên đã đối chiếu với mã nhưng chưa chạy lại khi viết tài liệu này. Kiểm trước khi dùng. Lô nghiệm thu nhiều lần chạy bằng `onboard/simtools/run_acceptance.sh`.
 
-## Lộ trình
+Lưu ý an toàn:
 
-- [x] Hợp đồng dữ liệu, khối nhận biết, SITL ArduCopter 4.7.2 trong WSL2, Gazebo một máy bay, thiết kế khớp gật.
-- [ ] **Chặng 1 (mô phỏng):** khớp gật giữ 25 m đạt nghiệm thu (3 seed × 2 lần); mất hình và giành quyền đạt trên cấu hình chốt; rà soát độc lập mã bám; chốt khoảng cách giữ ở B5.
-- [ ] **Nhận diện trên video (B1):** đạt tiêu chí recall và báo động giả trên tập sạch.
-- [ ] **Demo lab:** L0 trên Raspberry Pi 5; L1 có khớp gật và đọc FC chỉ đọc.
-- [ ] **Chặng 2:** camera mô phỏng trên Gazebo với hai máy bay, nhận diện trong vòng kín, ước lượng khoảng cách từ ảnh. Lập kế hoạch sau B5.
-- [ ] **Chặng 3:** mô hình lực cản thân dạng tên lửa, nâng dần tốc độ tới 400 km/h, chốt motor, ESC, pin, prop.
-- [ ] **Phần cứng bay:** camera Global Shutter và Hailo trên Pi 5, bay thử trong lab, bộ GCS chạy thật trên laptop đích.
-
-## Cách làm việc
-
-- Mỗi bước xong là một commit. Sổ ghi `.office/ledger.md` chỉ ghi thêm, không sửa dòng cũ.
-- Mỗi kết quả có ngày, mã task và bằng chứng. Số liệu trong README lấy từ sổ ghi hoặc file kết quả. Việc chưa kiểm được ghi rõ "chưa kiểm chứng".
-
-## Lưu ý an toàn
-
-- Đây là drone tốc độ cao. Mã phần mềm bám chưa kiểm trên phần cứng thật. Mọi tham số là đề xuất cho đến khi có bằng chứng bay thử.
+- Đây là drone tốc độ cao. Phần mềm bám chưa được kiểm trên phần cứng thật. Mọi tham số là đề xuất cho đến khi có bằng chứng bay thử.
 - Không bay khi chưa đi hết `gcs/config/checklist-truoc-bay.md`.
-- Tham số failsafe `gcs/config/dtrack-failsafe.param` là đề xuất, chưa bay thử. Duyệt từng giá trị trước khi nạp, đặt ngưỡng pin theo pack thật.
-- Mọi thao tác ghi lên FC (nạp firmware, đổi tham số) cần chủ dự án duyệt riêng.
+- Tham số failsafe `gcs/config/dtrack-failsafe.param` là đề xuất, chưa bay thử. Duyệt từng giá trị trước khi nạp.
+- Mọi thao tác ghi lên bộ điều khiển bay (nạp firmware, đổi tham số) cần chủ dự án duyệt riêng.
 - Rà soát bảo mật liên kết điều khiển là việc bắt buộc trước buổi bay thật. Hiện chưa làm.
-- Chỉ bay bằng tài khoản Windows thường.
+- Bộ cài GCS (`gcs/Install-Gcs.ps1`) chỉ dành cho laptop GCS riêng, cần quyền admin. Không chạy trên máy cá nhân. Đọc `gcs/README.md` trước. Chưa chạy thật lần nào.
 
-## Giấy phép và dữ liệu
+Giấy phép và dữ liệu:
 
-- Ultralytics và BoxMOT dùng AGPL-3.0. Cần xem xét trước khi phân phối ra ngoài (khảo sát ngày 2026-11-17, chưa có tư vấn pháp lý).
+- Ultralytics và BoxMOT dùng AGPL-3.0. Cần xem xét trước khi phân phối ra ngoài. Chưa có tư vấn pháp lý.
 - DUT Anti-UAV dùng Apache-2.0. Det-Fly dùng MIT trên repo gốc, đang tải, chưa kiểm.
 - Dữ liệu và trọng số của bên thứ ba không đưa vào repo.
 
-## Chưa chốt
+Điều chưa chốt:
 
-- Khoảng cách giữ chính thức (sau B5).
-- Phương án bám ở tốc độ cao (trên khoảng 14 m/s khi mục tiêu phanh gấp).
+- Khoảng cách giữ chính thức (sau cổng B5).
+- Cách bám ở tốc độ cao (trên khoảng 14 m/s khi mục tiêu phanh gấp).
 - Tốc độ hành trình 200–250 km/h, sau khi tốc độ tối đa đổi thành 400 km/h.
 - Hai chế độ vận hành (bay tay rồi khóa bám bằng công tắc trên tay điều khiển; khóa từ trạm GCS). Chưa có kế hoạch riêng.
+
+Cách làm việc: mỗi bước xong là một commit. Sổ ghi `.office/ledger.md` chỉ ghi thêm. Mỗi kết quả có ngày, mã việc và bằng chứng. Việc chưa kiểm được ghi rõ là "chưa kiểm chứng".
+
+</details>
