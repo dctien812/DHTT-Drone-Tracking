@@ -41,3 +41,16 @@ TAG=ft_v8n W=/mnt/d/Personal/Drone-Tracking/vision/runs/ft_v8n/weights/best.pt C
 ```
 `data/`, `runs/`, `weights/`, `*.pt` nam trong `.gitignore`. File `.pt` la pickle: chi nap 2 best.pt cu va trong so
 chinh thuc do ultralytics tu tai; du lieu tai ve chi doc nhu anh/nhan, khong chay gi trong goi du lieu.
+
+## B1: nhan dien + theo doi tren video ghi san (offline, chi doc video; ket qua: `results/b1/B1_REPORT.md`)
+Video: `D:\Personal\DHTT-TRACKING-TEST\AI-6\video\` (CHI DOC; 119 file, 640x512 30 fps, 1 file 464x848). Khong co nhan -> so do "khong can nhan".
+Goi qua WSL (xuong dong LF), tai lap theo thu tu:
+```bash
+bash scripts/run_b1_detect.sh                 # pha detect: 3 model x (full | crop320), luu moi phat hien conf>=0.1 vao runs/b1_det/*.npz (~15 phut/luot tren 8 loi)
+bash scripts/run_b1_track.sh                  # pha track: ByteTrack + BoT-SORT (khong ReID/GMC), conf 0.25 va 0.5 -> results/b1/trk_*.csv
+python -I scripts/summarize_b1.py             # -> results/b1/summary_b1.csv, B1_TABLES.md
+python -I scripts/render_b1.py runs/b1_det/ft_crop runs/b1_videos/best_ft_crop 0.25 V_DRONE_075,V_AIRPLANE_001
+python -I scripts/grab_b1.py runs/b1_videos/best_ft_crop runs/b1_videos/best_ft_crop/check   # 3 khung/video de tu kiem
+python -I scripts/catalog_b1.py results/b1/catalog.csv ; python -I scripts/sheets_b1.py runs/b1_videos/sheets
+```
+`lap` duoc ultralytics tu cai vao `~/venv-vision` khi chay tracker lan dau (lap 0.5.14).
