@@ -415,3 +415,12 @@ def test_blind_keeps_braking_when_braking_at_loss():
     g.prev_accel = (-3.0, 0.0, 0.0)                              # dang phanh 3 m/s^2 luc mat muc tieu
     c = g.step_blind(TrackState(t=t + 1.0 / 30, status=TrackStatus.LOST), own(v=(7.0, 0.0, 0.0)))
     assert c.vel_ned[0] < 6.0 - 0.05                             # khong tang len theo van toc muc tieu cu (8 m/s)
+
+def test_no_accel_compensation_when_camera_self_stabilized():
+    u = (1.0, 0.0, 0.0)
+    p = prev_cmd(v=(5.0, 0.0, 0.0))
+    kw = dict(prev=p, prev_accel=(4.0, 0.0, 0.0))
+    on = compute_guidance(track(r=15.0, u=u), own(v=(5.0, 0.0, 0.0)), GuidanceConfig(cam_tilt_up_deg=15.0), **kw)
+    off = compute_guidance(track(r=15.0, u=u), own(v=(5.0, 0.0, 0.0)),
+                           GuidanceConfig(cam_tilt_up_deg=15.0, elev_accel_comp=0.0), **kw)
+    assert off.vel_ned[2] > on.vel_ned[2] + 0.03      # khop gat: khong bu truoc nghieng mui -> khong len cao khi tang toc

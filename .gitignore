@@ -9,5 +9,13 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# Luong nhan dien: du lieu, trong so va ket qua chay (nang, khong dua len GitHub)
+vision/data/
+vision/runs/
+vision/weights/
+*.pt
+*.onnx
+*.hef
+
 # File tam cua Excel
 ~$*.xlsx
