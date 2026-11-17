@@ -27,6 +27,7 @@ OVQ = "'%s'" % OV
 CELL_VND = OVQ + "!$B$5"
 CELL_EUR = OVQ + "!$B$6"
 CELL_GBP = OVQ + "!$B$7"
+CELL_CNY = OVQ + "!$B$8"
 RATE_CELL = {"EUR": CELL_EUR, "GBP": CELL_GBP}
 
 STATUSES = ["Đã có", "Mua ngay", "Chờ mô phỏng", "Tùy chọn", "Kiểm tra trước khi mua"]
@@ -42,8 +43,8 @@ CONF = ["Đã mở trang", "Từ kết quả tìm kiếm"]
 HEADERS = ["STT", "Nhóm", "Linh kiện", "Model", "Thông số chính", "SL",
            "Đơn giá thấp (USD)", "Đơn giá cao (USD)", "Thành tiền thấp (USD)",
            "Thành tiền cao (USD)", "Thành tiền cao (VND)", "Trạng thái",
-           "Độ tin cậy", "Link", "Ghi chú", "Giá Taobao (CNY)", "Link Taobao"]
-WIDTHS = [5, 14, 26, 30, 36, 5, 11, 11, 13, 13, 16, 16, 15, 42, 44, 14, 40]
+           "Độ tin cậy", "Link", "Ghi chú", "Giá Taobao (CNY)", "Link Taobao", "Giá Taobao (VND)"]
+WIDTHS = [5, 14, 26, 30, 36, 5, 11, 11, 13, 13, 16, 16, 15, 42, 44, 14, 40, 16]
 NCOL = len(HEADERS)
 LASTCOL = get_column_letter(NCOL)
 
@@ -101,7 +102,8 @@ def build_item_sheet(wb, sh):
                 '=IF(OR(F%d="",H%d=""),"",F%d*H%d)' % (x, x, x, x),
                 '=IF(J%d="","",J%d*%s)' % (x, x, CELL_VND),
                 r["status"], r["conf"], r["link"] or None, note or None,
-                r.get("price_cny"), r.get("taobao_url") or None]
+                r.get("price_cny"), r.get("taobao_url") or None,
+                '=IF(P%d="","",P%d*%s)' % (x, x, CELL_CNY)]
         for c, v in enumerate(vals, 1):
             cell = ws.cell(row=x, column=c, value=v)
             cell.border, cell.alignment = BORDER, WRAP
@@ -109,7 +111,7 @@ def build_item_sheet(wb, sh):
                 cell.number_format = "#,##0.0"
             elif c in (7, 8, 9, 10):
                 cell.number_format = USD_FMT
-            elif c == 11:
+            elif c in (11, 18):
                 cell.number_format = VND_FMT
             elif c == 6:
                 cell.number_format = "0"
@@ -186,6 +188,7 @@ def build_overview(wb, data, lasts):
         (5, "USD → VND", meta["usd_vnd"], VND_FMT, "Giả định, hãy sửa theo tỷ giá thực."),
         (6, "EUR → USD", meta["eur_usd"], "0.0000", "Giả định, hãy sửa theo tỷ giá thực. Dùng cho dòng giá gốc EUR."),
         (7, "GBP → USD", meta["gbp_usd"], "0.0000", "Giả định, hãy sửa theo tỷ giá thực. Hiện chưa dòng nào dùng (giá £ của Sequre chỉ ghi trong Ghi chú)."),
+        (8, "CNY → VND", meta["cny_vnd"], VND_FMT, "Người dùng cho ngày 2026-11-17. Dùng cho cột 'Giá Taobao (VND)' (đơn giá, chưa nhân số lượng, chưa gồm vận chuyển và thuế)."),
     ]
     for r, lab, val, fmt, note in rates:
         ws.cell(row=r, column=1, value=lab).font = bold
