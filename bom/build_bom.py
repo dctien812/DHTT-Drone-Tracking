@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""Doc bom_data.json -> Drone-Tracking-BOM.xlsx (openpyxl). Chay: python build_bom.py"""
+"""Doc bom_data.json -> Drone-Tracking-BOM.xlsx (openpyxl). Chay: python build_bom.py
+
+Them gia Taobao: trong bom_data.json, o dong linh kien (rows[]) them cac truong
+  "price_cny": 2136.8                      (so, gia that doc tu trang san pham, CNY)
+  "taobao_url": "https://item.taobao.com/item.htm?id=..."   (link bam duoc)
+  "taobao_note": "..."                     (tuy chon, hien thanh ghi chu o o gia: shop, ngay, cau hinh)
+Dong khong co cac truong nay thi hai cot P, Q de trong. Cot P/Q khong nam trong cong thuc tong.
+Khong dien gia "tu" cua tin gop (chua dung cau hinh).
+"""
 import json
 import os
 
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -33,8 +42,10 @@ CONF = ["Đã mở trang", "Từ kết quả tìm kiếm"]
 HEADERS = ["STT", "Nhóm", "Linh kiện", "Model", "Thông số chính", "SL",
            "Đơn giá thấp (USD)", "Đơn giá cao (USD)", "Thành tiền thấp (USD)",
            "Thành tiền cao (USD)", "Thành tiền cao (VND)", "Trạng thái",
-           "Độ tin cậy", "Link", "Ghi chú"]
-WIDTHS = [5, 14, 26, 30, 36, 5, 11, 11, 13, 13, 16, 16, 15, 42, 44]
+           "Độ tin cậy", "Link", "Ghi chú", "Giá Taobao (CNY)", "Link Taobao"]
+WIDTHS = [5, 14, 26, 30, 36, 5, 11, 11, 13, 13, 16, 16, 15, 42, 44, 14, 40]
+NCOL = len(HEADERS)
+LASTCOL = get_column_letter(NCOL)
 
 HDR_FILL = PatternFill("solid", fgColor="1F4E78")
 HDR_FONT = Font(bold=True, color="FFFFFF")
@@ -89,11 +100,14 @@ def build_item_sheet(wb, sh):
                 '=IF(OR(F%d="",G%d=""),"",F%d*G%d)' % (x, x, x, x),
                 '=IF(OR(F%d="",H%d=""),"",F%d*H%d)' % (x, x, x, x),
                 '=IF(J%d="","",J%d*%s)' % (x, x, CELL_VND),
-                r["status"], r["conf"], r["link"] or None, note or None]
+                r["status"], r["conf"], r["link"] or None, note or None,
+                r.get("price_cny"), r.get("taobao_url") or None]
         for c, v in enumerate(vals, 1):
             cell = ws.cell(row=x, column=c, value=v)
             cell.border, cell.alignment = BORDER, WRAP
-            if c in (7, 8, 9, 10):
+            if c == 16:
+                cell.number_format = "#,##0.0"
+            elif c in (7, 8, 9, 10):
                 cell.number_format = USD_FMT
             elif c == 11:
                 cell.number_format = VND_FMT
@@ -103,11 +117,17 @@ def build_item_sheet(wb, sh):
             lc = ws.cell(row=x, column=14)
             lc.hyperlink = r["link"]
             lc.font = Font(color="0563C1", underline="single")
+        if r.get("taobao_url"):
+            tc = ws.cell(row=x, column=17)
+            tc.hyperlink = r["taobao_url"]
+            tc.font = Font(color="0563C1", underline="single")
+        if r.get("taobao_note") and r.get("price_cny") is not None:
+            ws.cell(row=x, column=16).comment = Comment(r["taobao_note"], "BOM")
     last = len(rows) + 1
     # dong tong
     t1, t2 = last + 1, last + 2
     for t, label in ((t1, "Tổng dòng 'Mua ngay'"), (t2, "Tổng mọi dòng (gồm Tùy chọn/ứng viên)")):
-        for c in range(1, 16):
+        for c in range(1, NCOL + 1):
             cell = ws.cell(row=t, column=c)
             cell.fill, cell.border, cell.font = TOT_FILL, BORDER, Font(bold=True)
         ws.cell(row=t, column=3, value=label)
@@ -120,7 +140,7 @@ def build_item_sheet(wb, sh):
     ws["O%d" % t1] = '="Dòng chưa có giá (trừ Đã có): "&COUNTIFS(L2:L%d,"<>Đã có",G2:G%d,"")' % (last, last)
     ws["O%d" % t1].alignment = WRAP
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = "A1:O%d" % last
+    ws.auto_filter.ref = "A1:%s%d" % (LASTCOL, last)
     dv = DataValidation(type="list", formula1='"%s"' % ",".join(STATUSES), allow_blank=True)
     dv.add("L2:L%d" % last)
     ws.add_data_validation(dv)
@@ -130,7 +150,7 @@ def build_item_sheet(wb, sh):
     ws.add_data_validation(dv2)
     for st, color in STATUS_FILL.items():
         ws.conditional_formatting.add(
-            "A2:O%d" % last,
+            "A2:%s%d" % (LASTCOL, last),
             FormulaRule(formula=['$L2="%s"' % st], fill=PatternFill("solid", bgColor=color, fgColor=color)))
     page_setup(ws)
     return last
@@ -245,6 +265,8 @@ def build_overview(wb, data, lasts):
     ws.cell(row=r + 2, column=2, value="Chỉ thấy trong kết quả tìm kiếm, chưa mở trang để xác nhận.")
     ws.cell(row=r + 3, column=1, value="—")
     ws.cell(row=r + 3, column=2, value="Chưa có nguồn (chưa tra hoặc đã có sẵn).")
+    ws.cell(row=r + 4, column=1, value="Giá Taobao (CNY)")
+    ws.cell(row=r + 4, column=2, value="Chỉ dòng đã đọc giá thật từ trang sản phẩm Taobao (đơn vị CNY, chưa quy đổi, không nằm trong các tổng USD/VND). Ô trống = chưa có giá Taobao. Chưa dùng tỷ giá CNY nào.")
     r = r + 5
     ws.cell(row=r, column=1, value="Lưu ý quan trọng (từ sheet Rủi ro, mục 1-5)").font = bold
     for k, rk in enumerate(data["risks"][:5], 1):
