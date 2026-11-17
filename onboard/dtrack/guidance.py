@@ -57,16 +57,28 @@ def _rot(q) -> np.ndarray:
 
 
 def vertical_image_error_rad(u: np.ndarray, own: OwnState, tilt_up_deg: float) -> float:
-    """Goc (rad) muc tieu lech khoi tam anh theo phuong dung; duong = muc tieu nam DUOI tam anh."""
+    """Goc (rad) muc tieu lech khoi tam anh theo phuong dung; duong = muc tieu nam DUOI tam anh.
+
+    Tinh trong khung da BU pitch/roll (chi giu yaw, nhu khi than may nam ngang): pitch tam thoi luc
+    tang/giam toc khong bi doi thanh lenh do cao (truoc day gay lech do cao 9-10 m).
+    """
     R_bc = np.asarray(make_camera(tilt_up_deg).R_body_cam, float)
-    ray = (_rot(own.q_world_body) @ R_bc).T @ u
+    yaw = yaw_from_quat(own.q_world_body)
+    c, s = math.cos(yaw), math.sin(yaw)
+    R_level = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+    ray = (R_level @ R_bc).T @ u
     return math.atan2(float(ray[1]), float(ray[2])) if ray[2] > _EPS else 0.0
 
 
 def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
                         prev: Optional[GuidanceCommand] = None,
-                        prev_accel: Optional[Vec3] = None) -> Tuple[GuidanceCommand, Vec3]:
-    """Nhu compute_guidance nhung tra them gia toc lenh (de gioi han jerk o chu ky ke)."""
+                        prev_accel: Optional[Vec3] = None,
+                        v_t_hold: Optional[Vec3] = None,
+                        info: Optional[dict] = None) -> Tuple[GuidanceCommand, Vec3]:
+    """Nhu compute_guidance nhung tra them gia toc lenh (de gioi han jerk o chu ky ke).
+
+    v_t_hold: van toc muc tieu NHO duoc (NED); khi COAST thi dung no thay cho uoc luong hien tai.
+    info: neu la dict, duoc dien v_t / u / r khi TRACK hop le (de bo nho cua Guidance cap nhat)."""
     t = track.t
     if not (math.isfinite(t) and _finite_vec(own.vel_ned) and _finite_vec(own.pos_ned)
             and _finite_vec(own.q_world_body) and math.isfinite(own.t)):
@@ -117,8 +129,14 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
         rdot = 0.0 if track.range_rate_mps is None or not math.isfinite(track.range_rate_mps) \
             else max(-cfg.range_rate_max_mps, min(cfg.range_rate_max_mps, track.range_rate_mps))
         v_t = v_own + rdot * u + lateral
+        if coasting and v_t_hold is not None and _finite_vec(v_t_hold):
+            v_t = np.asarray(v_t_hold, float)
+        elif info is not None and not coasting:
+            info.update(v_t=v_t.copy(), u=u.copy(), r=float(r_known))
         e = r_known - r_set
         u_p = max(-cfg.open_speed_max_mps, min(cfg.close_speed_max_mps, cfg.kp_range * e))
+        # toc do tien lai gan (so voi muc tieu) khong vuot toc do con phanh kip truoc range_min
+        u_p = min(u_p, math.sqrt(2.0 * cfg.a_decel_mps2 * max(r_known - cfg.range_min_m, 0.0)))
         min_range = r_known < cfg.range_min_m or (in_min_prev and r_known < cfg.range_min_m + cfg.range_min_hyst_m)
         if min_range:
             v_des = v_t - cfg.back_speed_mps * u
@@ -152,7 +170,15 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
 
     # giu muc tieu o giua anh theo phuong dung
     err = vertical_image_error_rad(u, own, cfg.cam_tilt_up_deg)
-    err = max(-0.5, min(0.5, err))
+    # vi tri mong muon trong anh bu truoc mui chui/ngang len theo GIA TOC LENH truoc (khong theo tu the do,
+    # nen pitch tam thoi khong bi doi thanh lech do cao): tang toc -> muc tieu mong muon thap hon (drone cao hon)
+    a_al = 0.0
+    sp_p = float(np.linalg.norm(v_prev[:2]))
+    if sp_p > 1.0 and prev_accel is not None and _finite_vec(prev_accel):
+        a_al = float(np.asarray(prev_accel, float)[:2] @ (v_prev[:2] / sp_p))
+    e_ref = max(-cfg.elev_ref_max_deg, min(cfg.elev_ref_max_deg,
+                                           cfg.target_elev_ref_deg - math.degrees(math.atan2(a_al, 9.81))))
+    err = max(-0.5, min(0.5, err - math.radians(cfg.cam_tilt_up_deg - e_ref)))
     vc = max(-cfg.vert_center_max_mps, min(cfg.vert_center_max_mps, cfg.kp_vert_center * r_est * math.tan(err)))
     w = np.array([0.0, 0.0, vc])
     v_des = v_des + (w - float(w @ u) * u)      # chi thanh phan vuong goc duong ngam: khong doi thanh phan tien/lui
@@ -170,17 +196,18 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
     a_des = (v_des - v_prev) / dt
     a_h = float(np.linalg.norm(a_des[:2]))
     braking = float(np.dot((v_des - v_prev)[:2], v_prev[:2])) < 0.0
+    jerk = cfg.jerk_back_mps3 if min_range else cfg.jerk_max_mps3     # lui khan: lenh duoc phep doi gia toc rat nhanh (FC tre ~1 s)
     a_lim = cfg.a_back_mps2 if min_range else (cfg.a_decel_mps2 if braking else cfg.a_max_mps2)
     # khong de gia toc lon hon muc con dung lai kip (jerk huu han): a <= sqrt(2*J*|dv|), tranh vot lo van toc dat
     dvh = float(np.linalg.norm((v_des - v_prev)[:2]))
-    a_lim = min(a_lim, max(math.sqrt(2.0 * cfg.jerk_max_mps3 * dvh), 0.05))
+    a_lim = min(a_lim, max(math.sqrt(2.0 * jerk * dvh), 0.05))
     sp_prev = float(np.linalg.norm(v_prev[:2]))
     if sp_prev > 1.0 and not min_range:
         # tach gia toc ngang: doc huong bay (gioi han a_max / a_decel) va vuong goc (re, gioi han a_lat)
         e = v_prev[:2] / sp_prev
         a_l = float(a_des[:2] @ e)
         a_t = a_des[:2] - a_l * e
-        cap = max(math.sqrt(2.0 * cfg.jerk_max_mps3 * dvh), 0.05)      # khong vot lo van toc dat
+        cap = max(math.sqrt(2.0 * jerk * dvh), 0.05)      # khong vot lo van toc dat
         a_l = max(-min(cfg.a_decel_mps2, cap), min(cfg.a_max_mps2, cap, a_l))
         nt = float(np.linalg.norm(a_t))
         if nt > min(cfg.a_lat_mps2, cap):
@@ -192,7 +219,7 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
     if prev_accel is not None and _finite_vec(prev_accel):
         da = a_des - np.asarray(prev_accel, float)
         dn = float(np.linalg.norm(da))
-        lim = cfg.jerk_max_mps3 * dt
+        lim = jerk * dt
         if dn > lim:
             a_des = np.asarray(prev_accel, float) + da * (lim / dn)
     v_cmd = v_prev + a_des * dt
@@ -263,6 +290,66 @@ class Guidance:
         self._last_r: Optional[float] = None
         self.prev: Optional[GuidanceCommand] = None
         self.prev_accel: Optional[Vec3] = ZERO
+        # bo nho muc tieu luc TRACK hop le cuoi: (t, v_t NED loc EMA, u, r)
+        self._mem: Optional[Tuple[float, np.ndarray, np.ndarray, float]] = None
+
+    def _mem_ok(self, t: float) -> bool:
+        return (self._mem is not None and math.isfinite(t)
+                and 0.0 <= t - self._mem[0] <= self.cfg.blind_mem_max_s)
+
+    def _hold_velocity(self, t: float) -> Vec3:
+        """Van toc muc tieu nho duoc; toc do ngang giam dan sau blind_grace_s (phong muc tieu dung/phanh)."""
+        v = self._mem[1].copy()
+        sp = math.hypot(float(v[0]), float(v[1]))
+        dec = self.cfg.blind_decel_mps2 * max(0.0, (t - self._mem[0]) - self.cfg.blind_grace_s)
+        if sp > 1e-6:
+            v[:2] *= max(0.0, sp - dec) / sp
+        return (float(v[0]), float(v[1]), float(v[2]))
+
+    def _safe_hold(self, hold: Vec3, own: OwnState, t: float) -> Vec3:
+        """Bay tiep trong luc khong thay muc tieu: (1) khong nhanh hon toc do ngang hien tai cua minh (uoc luong
+        van toc muc tieu o xa rat nhieu); (2) neu dang phanh thi tiep tuc phanh (mat muc tieu thuong do chinh
+        quad ngang mui len khi phanh, trong khi muc tieu dang phanh/dung)."""
+        h = np.array(hold, float)
+        so = math.hypot(float(own.vel_ned[0]), float(own.vel_ned[1]))
+        sh = math.hypot(float(h[0]), float(h[1]))
+        if sh > so and sh > 1e-6:
+            h[:2] *= so / sh
+        p, a = self.prev, self.prev_accel
+        if p is not None and a is not None and _finite_vec(p.vel_ned) and _finite_vec(a) and math.isfinite(p.t):
+            vp = np.asarray(p.vel_ned, float)[:2]
+            spp = float(np.linalg.norm(vp))
+            if spp > 1.0:
+                e = vp / spp
+                a_al = float(np.asarray(a, float)[:2] @ e)
+                if a_al < -0.5:
+                    dt = min(max(t - p.t, 1e-3), self.cfg.dt_max_s)
+                    s_new = max(0.0, spp + a_al * dt)
+                    along = float(h[:2] @ e)
+                    if along > s_new:
+                        h[:2] -= (along - s_new) * e
+        return (float(h[0]), float(h[1]), float(h[2]))
+
+    def _update_mem(self, t: float, info: dict) -> None:
+        v_t = info["v_t"]
+        if self._mem is not None and 0.0 < t - self._mem[0] <= 1.0:
+            a = 1.0 - math.exp(-(t - self._mem[0]) / max(self.cfg.v_t_mem_tau_s, 1e-3))
+            v_t = a * v_t + (1.0 - a) * self._mem[1]
+        self._mem = (t, v_t, info["u"], info["r"])
+
+    def step_blind(self, track: TrackState, own: OwnState) -> GuidanceCommand:
+        """Tracker khong con huong ngam (LOST/SEARCH) nhung supervisor con trong thoi han bay tiep:
+        bay theo van toc muc tieu nho duoc, mui quay ve huong ngam cuoi. Khong co bo nho -> phanh."""
+        if not self._mem_ok(track.t):
+            return self.step(track, own)
+        _, _, u_m, r_m = self._mem
+        synth = TrackState(t=track.t, status=TrackStatus.COAST, los_ned=tuple(float(c) for c in u_m),
+                           los_rate_ned=ZERO, range_m=r_m, range_rate_mps=0.0, range_valid=True)
+        cmd, acc = compute_guidance_ex(synth, own, self.cfg, self.prev, self.prev_accel,
+                                       v_t_hold=self._safe_hold(self._hold_velocity(track.t), own, track.t))
+        cmd = dataclasses.replace(cmd, reason=cmd.reason + "+blind")
+        self.prev, self.prev_accel = cmd, acc
+        return cmd
 
     def step(self, track: TrackState, own: OwnState) -> GuidanceCommand:
         # COAST: khoang cach ngoai suy cua tracker troi nhanh (r_dot cu khi chinh minh doi toc do);
@@ -275,6 +362,18 @@ class Guidance:
                                         range_valid=track.range_valid or self._last_r is not None)
         elif track.status != TrackStatus.COAST:
             self._last_r = None if track.status != TrackStatus.TRACK else self._last_r
-        cmd, acc = compute_guidance_ex(track, own, self.cfg, self.prev, self.prev_accel)
+        # TRACK nhung khoang cach khong tin (vua bat lai sau khi mat, sat mep anh): dung khoang cach nho duoc
+        # va van toc muc tieu nho duoc nhu COAST (khong tien lai gan, khong giat ve van toc ban than)
+        mem_ok = self._mem_ok(track.t)
+        if (mem_ok and track.status == TrackStatus.TRACK and track.los_ned is not None
+                and not (track.range_valid and track.range_m is not None and math.isfinite(track.range_m))):
+            track = dataclasses.replace(track, status=TrackStatus.COAST, range_m=self._mem[3],
+                                        range_rate_mps=0.0, range_valid=True)
+        hold = (self._safe_hold(self._hold_velocity(track.t), own, track.t)
+                if (mem_ok and track.status == TrackStatus.COAST) else None)
+        info: dict = {}
+        cmd, acc = compute_guidance_ex(track, own, self.cfg, self.prev, self.prev_accel, hold, info)
+        if info and math.isfinite(track.t) and _finite_vec(info["v_t"]):
+            self._update_mem(track.t, info)
         self.prev, self.prev_accel = cmd, acc
         return cmd

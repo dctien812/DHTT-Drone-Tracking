@@ -221,3 +221,41 @@ def test_range_invalid_in_supervisor_does_not_approach():
     o = s.step(inp(0.0, valid=False, r=40.0))
     assert o.state == SupState.TRACK and o.cmd.vel_ned[0] <= 0.0 + 1e-9
     assert "range_invalid" in o.cmd.reason
+
+
+# ---------------- T9a/B6a: bay tiep khi mat muc tieu, het han moi phanh ----------------
+def own_v(v=(8.0, 0.0, 0.0)):
+    return own(v=v)
+
+
+def test_tracker_lost_but_within_follow_window_keeps_flying():
+    s = sup(coast_follow_s=4.0)
+    t = 0.0
+    while t < 2.0:                                      # TRACK hop le, bay 8 m/s
+        s.step(inp(t, o=own_v()))
+        t += 0.033
+    o = s.step(inp(2.1, TrackStatus.COAST, o=own_v()))
+    assert o.state == SupState.COAST and o.cmd.vel_ned[0] > 5.0
+    o = s.step(inp(5.2, TrackStatus.LOST, o=own_v()))   # 3.1 s ke tu COAST: tracker da reset (LOST), supervisor van COAST
+    assert o.state == SupState.COAST and o.send and "blind" in o.cmd.reason and o.cmd.vel_ned[0] > 2.0
+    o = s.step(inp(5.9, TrackStatus.SEARCH, o=own_v()))  # 3.8 s: van trong han
+    assert o.state == SupState.COAST and "blind" in o.cmd.reason
+
+
+def test_follow_window_expires_to_lost_brake():
+    s = sup(coast_follow_s=4.0)
+    for k in range(60):
+        s.step(inp(k * 0.033, o=own_v()))
+    s.step(inp(2.1, TrackStatus.COAST, o=own_v()))
+    o = s.step(inp(6.2, TrackStatus.LOST, o=own_v()))   # 4.1 s ke tu COAST: het han
+    assert o.state == SupState.LOST and o.cmd.vel_ned == (0.0, 0.0, 0.0) and o.cmd.reason.startswith("brake")
+
+
+def test_blind_reacquire_returns_to_track():
+    s = sup()
+    for k in range(60):
+        s.step(inp(k * 0.033, o=own_v()))
+    s.step(inp(2.1, TrackStatus.COAST, o=own_v()))
+    assert s.step(inp(4.0, TrackStatus.LOST, o=own_v())).state == SupState.COAST
+    o = s.step(inp(4.2, TrackStatus.TRACK, o=own_v(), valid=False))
+    assert o.state == SupState.TRACK and o.send and o.cmd.vel_ned[0] <= 8.0 + 1e-6

@@ -18,11 +18,11 @@ class GuidanceConfig:
     # --- khoang cach ---
     range_set_m: float = 15.0          # m, khoang cach dat
     range_tau_s: float = 0.0           # s, r_dat = max(range_set_m, tau * |v ban than|); 0 = co dinh
-    range_min_m: float = 10.0          # m, khoang cach toi thieu CUNG: duoi nguong -> lui theo duong ngam
-    range_min_hyst_m: float = 2.0      # m, thoat che do lui khi r > range_min + hyst
-    back_speed_mps: float = 5.0        # m/s, toc do lui (tuong doi so voi muc tieu) khi duoi khoang cach toi thieu
+    range_min_m: float = 12.5          # m, nguong lui khan (> 8 m an toan cung: FC tre ~1 s, muc tieu cat canh dung ~8 m/s^2): duoi nguong -> lui theo duong ngam
+    range_min_hyst_m: float = 1.0      # m, thoat che do lui khi r > range_min + hyst
+    back_speed_mps: float = 8.0        # m/s, toc do lui (tuong doi so voi muc tieu) khi duoi khoang cach toi thieu
     kp_range: float = 0.3              # 1/s, he so ti le (r - r_dat) -> van toc doc duong ngam
-    close_speed_max_mps: float = 2.0   # m/s, gioi han thanh phan P tien lai gan (so voi van toc muc tieu uoc luong)
+    close_speed_max_mps: float = 3.0   # m/s, gioi han thanh phan P tien lai gan (so voi van toc muc tieu uoc luong)
     open_speed_max_mps: float = 3.0    # m/s, gioi han thanh phan P lui ra
     # --- khop van toc muc tieu ---
     range_rate_max_mps: float = 60.0   # m/s, |r_dot| duoc dung toi da (cat)
@@ -31,16 +31,24 @@ class GuidanceConfig:
     # --- giu muc tieu o giua anh (phuong dung) ---
     kp_vert_center: float = 0.5        # (m/s)/m, do lech dung (m = r*tan(goc lech)) -> van toc dung
     vert_center_max_mps: float = 2.5   # m/s, gioi han thanh phan dung do giu giua anh
+    target_elev_ref_deg: float = 4.0   # do, goc nang MONG MUON cua muc tieu so voi mat phang ngang cua drone khi khong tang/giam toc
+    elev_ref_max_deg: float = 8.0      # do, goc nang mong muon bi cat trong +-gia tri nay (bu truoc mui chui khi tang toc theo GIA TOC LENH, khong theo tu the do)
     # --- gioi han ---
     v_max_mps: float = 30.0            # m/s, toc do ngang toi da cua lenh
     climb_max_mps: float = 4.0         # m/s, toc do len toi da
     descend_max_mps: float = 4.0       # m/s, toc do xuong toi da
-    a_max_mps2: float = 2.0            # m/s^2, gia toc ngang toi da cua lenh; nho de than quad khong nghieng qua xa ngoai truong nhin camera co dinh
-    a_lat_mps2: float = 4.0            # m/s^2, gia toc ngang toi da VUONG GOC huong bay (re): lon hon doc huong vi khong lam mui chui/ngang len
-    a_decel_mps2: float = 0.8          # m/s^2, gia toc ngang toi da khi GIAM toc do (phanh nho hon tang toc: quad ngang mui len khi phanh, camera co dinh se mat muc tieu)
-    a_back_mps2: float = 3.0           # m/s^2, gia toc ngang toi da khi dang lui do duoi khoang cach toi thieu (uu tien cao hon a_max)
+    a_max_mps2: float = 3.5            # m/s^2, gia toc ngang toi da cua lenh (muc tieu cat canh tang toc ~4.5 m/s^2; nghieng mui chui duoc bu bang do cao muc tieu mong muon, xem target_elev_ref_deg)
+    a_lat_mps2: float = 7.0            # m/s^2, gia toc ngang toi da VUONG GOC huong bay (re): muc tieu 20 m/s re 15 do/s can ~5.2 m/s^2 huong tam
+    a_decel_mps2: float = 3.0          # m/s^2, gia toc ngang toi da khi GIAM toc do (cung dung de gioi han toc do tien lai gan theo quang phanh: v_close <= sqrt(2*a_decel*(r - range_min)))
+    a_back_mps2: float = 12.0           # m/s^2, gia toc ngang toi da khi dang lui do duoi khoang cach toi thieu (uu tien cao hon a_max)
     a_max_z_mps2: float = 1.5          # m/s^2, gia toc dung toi da
-    jerk_max_mps3: float = 6.0         # m/s^3, toc do doi gia toc lenh toi da
+    jerk_max_mps3: float = 10.0        # m/s^3, toc do doi gia toc lenh toi da
+    jerk_back_mps3: float = 80.0       # m/s^3, nhu tren nhung khi dang lui khan duoi range_min
+    # --- mat muc tieu (COAST / mat han): bay tiep theo van toc muc tieu uoc luong cuoi ---
+    v_t_mem_tau_s: float = 0.5         # s, hang so loc (EMA) cua van toc muc tieu nho duoc luc con TRACK hop le
+    blind_grace_s: float = 1.0         # s, sau chung nay ke tu lan TRACK hop le cuoi moi bat dau giam toc do bay tiep
+    blind_decel_mps2: float = 1.0      # m/s^2, toc do ngang bay tiep giam dan (phong muc tieu dung/phanh luc mat hinh)
+    blind_mem_max_s: float = 8.0       # s, bo nho muc tieu cu hon chung nay thi bo (khong dung de bay tiep)
     dt_default_s: float = 1.0 / 30     # s, dt khi chua co lenh truoc
     dt_max_s: float = 0.2              # s, dt toi da dung de gioi han (lenh truoc cu hon -> coi nhu 0.2 s)
     yaw_lead_s: float = 0.5            # s, yaw lenh = huong ngam + toc do quay ngang cua duong ngam * yaw_lead_s (bu tre FC)
@@ -53,7 +61,7 @@ class GuidanceConfig:
 
 @dataclass
 class SupervisorConfig:
-    coast_follow_s: float = 2.0        # s, COAST: tiep tuc theo du doan toi da chung nay (< coast_timeout cua tracker)
+    coast_follow_s: float = 4.0        # s, COAST (ke ca khi tracker da bao LOST): bay tiep theo van toc muc tieu cuoi toi da chung nay, het han moi phanh ve treo
     lost_rtl_s: float = 10.0           # s, khong co muc tieu qua chung nay -> yeu cau RTL
     rtl_on_lost: bool = True           # bat/tat yeu cau RTL
     heartbeat_timeout_s: float = 3.0   # s, mat HEARTBEAT cua FC -> ABORT (GUIDED tu dung sau 3 s khong lenh)

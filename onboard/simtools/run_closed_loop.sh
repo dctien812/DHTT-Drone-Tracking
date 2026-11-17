@@ -2,7 +2,8 @@
 # Vong kin SITL: 2 SITL (target + chaser) + target.py (sim/) + sim_helper.py + dtrack.app --auto-engage.
 # Dung: run_closed_loop.sh <toc_do_target_m/s>
 # Bien moi truong: SEED (mac dinh 1, seed bo phat hien tong hop), SCENARIO (none|blackout|disengage),
-#   SPEEDUP (mac dinh 1), RANGE (15), CONFIG (file TOML/JSON cua app, tuy chon), MAX_WALL (giay that, 900),
+#   STRAIGHT=1 (muc tieu bay thang, khong re: target.py --first-turn rat lon), SPEEDUP (mac dinh 1),
+#   RANGE (15; khoang cach dat, truyen cho helper, bo cham VA app qua file cau hinh tam neu CONFIG khong dat), CONFIG (file TOML/JSON cua app, tuy chon), MAX_WALL (giay that, 900),
 #   OUT_ROOT (mac dinh onboard/simtools/out).
 # Chi kill cac PID do chinh script nay tao (khong pkill). Khong goi sim/run_chase.sh.
 # Exit code = exit code cua analyze_closed_loop.py (0 PASS, 1 FAIL); app thoat khac 0 -> FAIL.
@@ -14,6 +15,11 @@ SCENARIO="${SCENARIO:-none}"
 SPEEDUP="${SPEEDUP:-1}"
 RANGE="${RANGE:-15}"
 MAX_WALL="${MAX_WALL:-900}"
+# bo CR/LF dinh vao tham so (lenh goi tu Windows co the dinh CRLF) de ten thu muc ket qua khong co '\r'
+STRAIGHT="${STRAIGHT:-0}"
+for _v in SPEED SEED SCENARIO SPEEDUP RANGE MAX_WALL STRAIGHT; do
+  printf -v "$_v" '%s' "$(printf '%s' "${!_v}" | tr -d '\r\n')"
+done
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ONBOARD="$(cd "$HERE/.." && pwd)"
 SIM="$(cd "$ONBOARD/../sim" && pwd)"
@@ -50,12 +56,14 @@ cp "$0" "$OUT/run_closed_loop.sh.txt" 2>/dev/null || true
 PIDS+=("$!")
 "$SIM/run_sitl.sh" 1 "$HOME_CHASER" "$RUN/chaser" "$SPEEDUP" > "$OUT/sitl_chaser.log" 2>&1 &
 PIDS+=("$!")
-(cd "$SIM" && exec "$PY" "$SIM/target.py" --speed "$SPEED" --go-file "$OUT/go" --stop-file "$OUT/stop") \
+TARGS=()
+[ "$STRAIGHT" = "1" ] && TARGS=(--first-turn 1000000)
+(cd "$SIM" && exec "$PY" "$SIM/target.py" --speed "$SPEED" "${TARGS[@]}" --go-file "$OUT/go" --stop-file "$OUT/stop") \
   > "$OUT/target.log" 2>&1 &
 PIDS+=("$!")
 
 (cd "$ONBOARD" && exec timeout "$MAX_WALL" "$PY" "$HERE/sim_helper.py" --out "$OUT" --speed "$SPEED" \
-  --scenario "$SCENARIO" --range "$RANGE") > "$OUT/helper.log" 2>&1 &
+  --scenario "$SCENARIO" --range "$RANGE" $([ "$STRAIGHT" = "1" ] && echo --straight)) > "$OUT/helper.log" 2>&1 &
 HELPER=$!
 PIDS+=("$HELPER")
 
@@ -69,7 +77,8 @@ done
 APP_RC=99
 if [ -f "$OUT/ready" ]; then
   CFGARG=()
-  [ -n "${CONFIG:-}" ] && CFGARG=(--config "$CONFIG")
+  if [ -n "${CONFIG:-}" ]; then CFGARG=(--config "$CONFIG")
+  elif [ "$RANGE" != "15" ]; then printf '{"guidance": {"range_set_m": %s}}\n' "$RANGE" > "$OUT/app_cfg.json"; CFGARG=(--config "$OUT/app_cfg.json"); fi
   (cd "$ONBOARD" && exec "$PY" -m dtrack.app "${CFGARG[@]}" --connect tcp:127.0.0.1:5770 --source sim --auto-engage \
     --sim-target tcp:127.0.0.1:5762 --sim-chaser tcp:127.0.0.1:5773 --sim-seed "$SEED" \
     --sim-blackout-file "$OUT/blackout" --stop-file "$OUT/app_stop" --log "$OUT/app_log.csv") \

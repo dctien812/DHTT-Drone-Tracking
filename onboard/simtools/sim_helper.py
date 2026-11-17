@@ -144,6 +144,7 @@ def main():
     ap.add_argument("--max-wait", type=float, default=150.0)
     ap.add_argument("--event-at", type=float, default=40.0, help="s sau t_ws cho kich ban mat hinh / disengage")
     ap.add_argument("--blackout-s", type=float, default=3.0)
+    ap.add_argument("--straight", action="store_true", help="muc tieu bay thang (chi ghi vao events.json de bo cham biet)")
     ap.add_argument("--chaser-ctl", default="tcp:127.0.0.1:5772")
     ap.add_argument("--chaser-unblock", default="127.0.0.1:5770")
     ap.add_argument("--target-truth", default="tcp:127.0.0.1:5763")
@@ -152,7 +153,7 @@ def main():
     f_go, f_stop = os.path.join(out, "go"), os.path.join(out, "stop")
     f_ready, f_appup = os.path.join(out, "ready"), os.path.join(out, "app_up")
     f_appstop, f_black = os.path.join(out, "app_stop"), os.path.join(out, "blackout")
-    ev = {"scenario": a.scenario, "speed": a.speed}
+    ev = {"scenario": a.scenario, "speed": a.speed, "straight": bool(a.straight)}
 
     # SITL chaser doi mot ket noi tren SERIAL0 moi chay: mo roi dong (app se dung cong nay sau)
     host, port = a.chaser_unblock.split(":")

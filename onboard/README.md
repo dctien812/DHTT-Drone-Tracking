@@ -31,16 +31,16 @@ DetectionSource.poll() -> [Detection]
 
 ### Luật dẫn đường (hệ NED, `u` = đường ngắm, `r` = khoảng cách)
 - Vận tốc mục tiêu ước lượng `v_t = v_own + ṙ·u + r·(ω × u)` (chỉ khi `range_valid`).
-- Lệnh `v = v_t + clip(Kp·(r − r_đặt))·u` cộng thành phần đứng giữ mục tiêu giữa ảnh (chỉ thành phần vuông góc đường ngắm).
+- Lệnh `v = v_t + clip(Kp·(r − r_đặt))·u` (P tiến lại gần còn bị cắt ≤ √(2·a_decel·(r − range_min)): quãng phanh), cộng thành phần đứng giữ mục tiêu ở góc nâng mong muốn `target_elev_ref_deg` (tính trong khung đã bù pitch/roll, chỉ giữ yaw; góc mong muốn hạ thấp theo GIA TỐC LỆNH trước khi tăng tốc, không theo tư thế đo; chỉ thành phần vuông góc đường ngắm).
 - `r_đặt = max(range_set_m, range_tau_s·|v|)`. Yaw hướng mũi theo đường ngắm có bù trễ (`yaw_lead_s`) và giới hạn tốc độ đổi.
 - An toàn (thứ tự ưu tiên): dữ liệu không hữu hạn → phanh (v = 0, giữ yaw); không có mục tiêu → phanh; `r < range_min_m` (hysteresis) → lùi theo đường ngắm
   (giới hạn gia tốc `a_back`, không bị bỏ qua hoàn toàn); `range_valid = False` hoặc COAST → KHÔNG tiến lại gần: thành phần dọc đường ngắm không vượt vận tốc bản thân hiện tại, giảm dần; giới hạn tốc độ ngang/lên/xuống, gia tốc (dọc hướng bay `a_max`, phanh `a_decel`, vuông góc `a_lat`), jerk; độ cao tối thiểu.
-- COAST: dùng khoảng cách hợp lệ cuối cùng (đóng băng, ṙ = 0) thay vì khoảng cách tracker ngoại suy (ngoại suy trôi nhanh khi chính mình đổi tốc độ).
+- COAST / mất hẳn / TRACK nhưng `range_valid = False` (vừa bắt lại, sát mép ảnh): dùng khoảng cách hợp lệ cuối cùng (đóng băng, ṙ = 0) và VẬN TỐC MỤC TIÊU NHỚ ĐƯỢC (EMA lúc TRACK hợp lệ). Bay tiếp theo vận tốc đó, giảm dần sau `blind_grace_s` (`blind_decel_mps2`), không bao giờ nhanh hơn tốc độ ngang hiện tại của mình, và nếu lúc mất mục tiêu đang phanh thì tiếp tục phanh; mũi quay về hướng ngắm cuối. Bộ nhớ cũ hơn `blind_mem_max_s` bị bỏ.
 
 ### Supervisor
 - Chỉ gửi lệnh khi FC đã arm, mode GUIDED và có tín hiệu engage (bay thật: kênh RC `engage_rc_channel` > `engage_rc_threshold_us`; SITL: `--auto-engage`, bị từ chối nếu nguồn không phải `sim`). Mất một trong ba → IDLE, ngừng gửi ngay. Không bao giờ arm / cất cánh / đổi sang GUIDED.
 - Watchdog → ABORT (phanh nếu còn link): vòng lặp chậm > `loop_slow_s`, mất HEARTBEAT > `heartbeat_timeout_s`, tuổi dữ liệu tư thế > `pose_timeout_s`; lý do ghi vào log và `abort_reasons`.
-- COAST tối đa `coast_follow_s`, sau đó LOST (phanh, giữ vị trí); không có mục tiêu quá `lost_rtl_s` → yêu cầu RTL một lần (`rtl_on_lost`).
+- COAST tối đa `coast_follow_s` tính từ lúc vào COAST, kể cả khi tracker đã báo LOST/SEARCH (nó reset sau 3 s): vẫn bay tiếp như trên; hết hạn mới LOST (phanh, giữ vị trí); không có mục tiêu quá `lost_rtl_s` → yêu cầu RTL một lần (`rtl_on_lost`).
 - Khi app kết thúc (SIGINT/SIGTERM/`--stop-file`) mà FC vẫn ở GUIDED: phanh tường minh (v = 0, giữ yaw) tới khi đứng yên hoặc `brake_on_exit_s`, rồi thoát 0.
 
 ## Hằng số MAVLink đã xác minh (ArduPilot 4.7.2, `~/ardupilot`)
@@ -61,27 +61,29 @@ Vòng kín SITL (mỗi lần ~5 phút thật; không gọi `sim/run_chase.sh`):
 Biến môi trường: `SEED` (seed bộ phát hiện tổng hợp), `SCENARIO` = `none` | `blackout` (tắt nguồn phát hiện 3 s tại t_ws+40 s) | `disengage` (đổi mode LOITER tại t_ws+40 s), `SPEEDUP`, `RANGE`, `CONFIG`, `MAX_WALL`.
 Kết quả ở `onboard/simtools/out/<giờ>_<tốc độ>ms_s<seed>_<kịch bản>/`: `truth.csv` (vị trí THẬT của hai máy từ `SIM_STATE`, 50 Hz), `app_log.csv`, `events.json`, `result.txt`, log các tiến trình.
 Cổng SITL: target `5760` (target.py) / `5762` (SimTruthSource) / `5763` (sim_helper); chaser `5770` (app) / `5772` (sim_helper) / `5773` (SimTruthSource).
-Chấm điểm (`analyze_closed_loop.py`) chỉ dùng vị trí thật: sai số TB < 3 m trong cửa sổ 120 s, min khoảng cách thật ≥ 8 m trên TOÀN chuyến bay (cất cánh → cả hai dừng), TRACK ≥ 90%, khoảng trống dữ liệu ≤ 0.2 s, ≥ 10 Hz, app thoát 0.
+Chấm điểm (`analyze_closed_loop.py`) chỉ dùng vị trí thật: sai số TB < 3 m trong cửa sổ 120 s, min khoảng cách thật ≥ 8 m trên TOÀN chuyến bay (cất cánh → cả hai dừng), TRACK ≥ 90%, khoảng trống dữ liệu ≤ 0.2 s CHỈ trong cửa sổ đo (khoảng trống toàn chuyến chỉ in tham khảo), ≥ 10 Hz, app thoát 0.
 Phép đổi lat/lon → mét dùng trắc địa WGS84 theo vĩ độ (`mavlink_io.latlon_to_ned`).
 
 ## Bảng tham số chính (`config.py`)
 | Tham số | Mặc định | Ý nghĩa |
 |---|---|---|
 | `guidance.range_set_m` / `range_tau_s` | 15 m / 0 | khoảng cách đặt; `r_đặt = max(range_set_m, tau·|v|)` |
-| `guidance.range_min_m` (+ hyst 2 m) | 10 m | khoảng cách tối thiểu cứng → lùi |
-| `guidance.back_speed_mps` | 5 | tốc độ lùi so với mục tiêu khi dưới tối thiểu |
+| `guidance.range_min_m` (+ hyst 1 m) | 12.5 m | ngưỡng lùi khẩn (cao hơn 8 m an toàn vì FC trễ ~1 s) |
+| `guidance.back_speed_mps` | 8 | tốc độ lùi so với mục tiêu khi dưới ngưỡng |
 | `guidance.kp_range` | 0.3 1/s | hệ số tỉ lệ sai số khoảng cách |
-| `guidance.close_speed_max_mps` / `open_speed_max_mps` | 2 / 3 | giới hạn thành phần P (tiến / lùi) |
-| `guidance.kp_vert_center` / `vert_center_max_mps` | 0.5 / 2.5 | giữ mục tiêu giữa ảnh theo phương đứng |
+| `guidance.close_speed_max_mps` / `open_speed_max_mps` | 3 / 3 | giới hạn thành phần P (tiến / lùi) |
+| `guidance.kp_vert_center` / `vert_center_max_mps` | 0.5 / 2.5 | giữ mục tiêu ở góc nâng mong muốn theo phương đứng |
+| `guidance.target_elev_ref_deg` / `elev_ref_max_deg` | 4 / 8 | góc nâng mong muốn của mục tiêu khi không tăng/giảm tốc / cắt ± (bù trước nghiêng mũi theo gia tốc lệnh) |
 | `guidance.v_max_mps` | 30 | tốc độ ngang tối đa |
 | `guidance.climb_max_mps` / `descend_max_mps` | 4 / 4 | tốc độ lên / xuống |
-| `guidance.a_max_mps2` / `a_decel_mps2` / `a_lat_mps2` / `a_back_mps2` / `a_max_z_mps2` | 2 / 0.8 / 4 / 3 / 1.5 | gia tốc (dọc tăng tốc, phanh, ngang khi rẽ, khi lùi khẩn, đứng) |
-| `guidance.jerk_max_mps3` | 6 | tốc độ đổi gia tốc lệnh |
+| `guidance.a_max_mps2` / `a_decel_mps2` / `a_lat_mps2` / `a_back_mps2` / `a_max_z_mps2` | 3.5 / 3 / 7 / 12 / 1.5 | gia tốc (dọc tăng tốc, phanh, ngang khi rẽ, khi lùi khẩn, đứng) |
+| `guidance.jerk_max_mps3` / `jerk_back_mps3` | 10 / 80 | tốc độ đổi gia tốc lệnh (thường / khi lùi khẩn) |
+| `guidance.v_t_mem_tau_s` / `blind_grace_s` / `blind_decel_mps2` / `blind_mem_max_s` | 0.5 / 1 / 1 / 8 | bộ nhớ vận tốc mục tiêu, bay tiếp khi mất mục tiêu |
 | `guidance.yaw_rate_max_dps` / `yaw_lead_s` | 90 / 0.5 | giới hạn tốc độ yaw lệnh / bù trễ |
 | `guidance.min_alt_m` | 10 | độ cao tối thiểu so với home EKF |
 | `camera.tilt_up_deg` | 15 | góc ngẩng camera so với trục mũi |
 | `camera.fx, fy` | 1739 px | lens 6 mm (≈ 45°×35°); lens 8 mm: 2319 (≈ 35°×26°, quá hẹp cho camera cố định) |
-| `supervisor.coast_follow_s` | 2 s | COAST theo dự đoán tối đa |
+| `supervisor.coast_follow_s` | 4 s | bay tiếp (COAST) tối đa khi mất mục tiêu, rồi phanh |
 | `supervisor.lost_rtl_s`, `rtl_on_lost` | 10 s, bật | không có mục tiêu quá lâu → RTL |
 | `supervisor.heartbeat_timeout_s` / `pose_timeout_s` / `loop_slow_s` | 3 / 0.5 / 0.25 s | ngưỡng watchdog |
 | `supervisor.engage_rc_channel`, `engage_rc_threshold_us` | 8, 1700 | tín hiệu engage khi bay thật |
@@ -91,6 +93,6 @@ Phép đổi lat/lon → mét dùng trắc địa WGS84 theo vĩ độ (`mavlink
 ## Hạn chế và điều CHƯA có
 - **Camera thật + Hailo chưa có**: `CameraHailoSource` ném `NotImplementedError`. Mọi số đo vòng kín dùng phát hiện TỔNG HỢP từ vị trí thật của mục tiêu (nhiễu tâm 1.5 px, kích thước 1 px, bỏ sót 20%, giả 5%, trễ 60 ms, cắt mép), nên chưa phản ánh detector thật.
 - Kênh RC engage cho bay thật **chưa thử** (chỉ đọc `RC_CHANNELS`; SITL dùng `--auto-engage`). Chưa thử trên phần cứng, chưa bay thật, chưa thử ở tốc độ ≳ 20 m/s.
-- Camera cố định: quad nghiêng mũi theo gia tốc và lực cản nên mục tiêu ra khỏi khung ~35° dọc. Gia tốc dọc (2 m/s²) và phanh (0.8 m/s²) bị giới hạn thấp có chủ đích; ở tốc độ cao hơn (xem báo cáo 20 m/s) mục tiêu ra khỏi khung. Cần gimbal hoặc camera rộng hơn / giảm tốc độ bám.
+- Camera cố định: quad nghiêng mũi theo gia tốc và lực cản nên mục tiêu ra khỏi khung ~35° dọc. Khi tăng tốc mạnh (mục tiêu cất cánh ~7 m/s² ở 20 m/s) nghiêng mũi tới ~35–40° nên mục tiêu ra khỏi khung phía trên; khi phanh ngẩng mũi nên ra khỏi khung phía dưới. Cần gimbal hoặc camera rộng hơn / giảm tốc độ bám (so sánh ở bước B4).
 - Mô hình SITL là quad `freestyle` 0.8 kg, không phải drone thật; thông số điều khiển chỉnh theo mô hình này.
 - `types.py` / khối nhận biết không sửa; góp ý: `TrackState` không có độ tin cậy ngoại suy của khoảng cách khi COAST (guidance tự đóng băng).

@@ -4,7 +4,8 @@ Supervisor quyet dinh LENH CUOI CUNG gui cho FC. Quy tac:
 - Chi gui lenh khi: FC da arm, dang o GUIDED, va co tin hieu engage. Het mot trong ba -> IDLE, ngung gui NGAY
   (khong tranh quyen voi phi cong). Supervisor khong bao gio yeu cau arm / cat canh / doi sang GUIDED.
 - Watchdog: chu ky vong lap cham, mat HEARTBEAT, tuoi du lieu tu the qua nguong -> ABORT (phanh neu con link).
-- Mat muc tieu: COAST theo du doan toi da coast_follow_s; sau do LOST: phanh ve van toc 0 giu vi tri;
+- Mat muc tieu: COAST toi da coast_follow_s (ke ca khi tracker da bao LOST/SEARCH): bay tiep theo van toc muc tieu
+  nho duoc, mui quay ve huong ngam cuoi; sau do LOST: phanh ve van toc 0 giu vi tri;
   LOST (hoac chua tung thay muc tieu) qua lost_rtl_s -> yeu cau RTL mot lan (neu bat).
 """
 from __future__ import annotations
@@ -131,6 +132,7 @@ class Supervisor:
         # ---- trang thai theo muc tieu ----
         st = inp.track.status
         reason = ""
+        blind = False
         if st == TrackStatus.TRACK:
             self.state = SupState.TRACK
             self._had_target = True
@@ -146,6 +148,11 @@ class Supervisor:
                 reason = "coast_timeout"
                 if self._lost_t is None:
                     self._lost_t = self._coast_t + c.coast_follow_s
+        elif (st in (TrackStatus.LOST, TrackStatus.SEARCH) and self._had_target and self._coast_t is not None
+              and inp.t - self._coast_t <= c.coast_follow_s):
+            # tracker da bo muc tieu (reset sau coast_timeout) nhung con trong thoi han bay tiep: van COAST
+            self.state = SupState.COAST
+            blind = True
         else:   # SEARCH / LOST cua tracker (hoac COAST khi chua tung co muc tieu)
             self._coast_t = None
             if self._had_target or self.state in (SupState.LOST, SupState.COAST, SupState.TRACK):
@@ -159,7 +166,9 @@ class Supervisor:
 
         # ---- lenh ----
         request_rtl = False
-        if self.state in (SupState.TRACK, SupState.COAST):
+        if blind:
+            cmd = self.guidance.step_blind(inp.track, own)
+        elif self.state in (SupState.TRACK, SupState.COAST):
             cmd = self.guidance.step(inp.track, own)
         else:
             cmd = self.guidance.step(inp.track, own)    # SEARCH/LOST -> guidance tra lenh phanh

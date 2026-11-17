@@ -85,7 +85,7 @@ def test_invalid_range_never_closes_beyond_matching(seed):
     rad_own = float(np.dot(v_own, u))
     if "min_range" in c.reason:
         # dang lui khoi vung duoi khoang cach toi thieu: chi can GIAM thanh phan tien lai gan so voi lenh truoc
-        assert radial(c, u) <= max(float(np.dot(prev.vel_ned, u)), -CFG.back_speed_mps) + 0.1
+        assert radial(c, u) <= max(float(np.dot(prev.vel_ned, u)), -CFG.back_speed_mps) + 0.5     # vz bi gioi han gia toc dung / toc do xuong
     else:
         # khong tien lai gan nhanh hon toc do ban than hien tai doc duong ngam (khop), rdot rac khong duoc dung
         assert radial(c, u) <= rad_own + 0.3
@@ -135,8 +135,8 @@ def test_min_range_hysteresis_and_exit():
     g = Guidance(CFG)
     o = own()
     assert "min_range" in g.step(track(r=9.0, t=10.0), o).reason
-    assert "min_range" in g.step(track(r=11.0, t=10.03), o).reason       # trong vung hysteresis (< 12)
-    assert "min_range" not in g.step(track(r=13.0, t=10.06), o).reason
+    assert "min_range" in g.step(track(r=13.0, t=10.03), o).reason       # trong vung hysteresis (< range_min + hyst = 13.5)
+    assert "min_range" not in g.step(track(r=14.0, t=10.06), o).reason
 
 
 def test_min_range_overrides_even_when_target_receding_fast():
@@ -240,11 +240,21 @@ def test_vertical_centering_sign():
     assert c.vel_ned[2] > 0.0
 
 
-def test_camera_tilt_changes_vertical_reference():
+def test_vertical_reference_is_target_elevation_not_camera_axis():
     cfg = GuidanceConfig(cam_tilt_up_deg=15.0)
-    u = unit((math.cos(math.radians(15.0)), 0.0, -math.sin(math.radians(15.0))))   # dung tren truc camera
+    el = math.radians(cfg.target_elev_ref_deg)                 # muc tieu dung o goc nang mong muon: khong can chinh do cao
+    u = unit((math.cos(el), 0.0, -math.sin(el)))
     c = compute_guidance(track(r=15.0, u=tuple(u)), own(), cfg, prev_cmd())
     assert abs(c.vel_ned[2]) < 0.05
+
+
+def test_vertical_reference_lowers_when_accelerating():
+    cfg = GuidanceConfig(cam_tilt_up_deg=15.0)
+    u = (1.0, 0.0, 0.0)
+    p = prev_cmd(v=(5.0, 0.0, 0.0))
+    hover = compute_guidance(track(r=15.0, u=u), own(v=(5.0, 0.0, 0.0)), cfg, p, (0.0, 0.0, 0.0))
+    accel = compute_guidance(track(r=15.0, u=u), own(v=(5.0, 0.0, 0.0)), cfg, p, (4.0, 0.0, 0.0))
+    assert accel.vel_ned[2] < hover.vel_ned[2] - 0.1            # tang toc: drone len cao hon muc tieu (muc tieu thap hon mong muon)
 
 
 def test_guidance_wrapper_keeps_state():
@@ -298,3 +308,110 @@ def test_braking_slower_than_accelerating():
     c = compute_guidance(track(r=15.0, rdot=-10.0), own(v=(10.0, 0.0, 0.0)), CFG, p)   # can giam toc
     dv = abs(c.vel_ned[0] - 10.0)
     assert dv <= CFG.a_decel_mps2 * 0.1 + 1e-6
+
+
+# ---------------- T9a/B6a: bay tiep co gioi han khi COAST / mat han ----------------
+def _warm(g, v=(10.0, 0.0, 0.0), n=60, t0=10.0, r=15.0, dt=1.0 / 30):
+    """Cho Guidance thay muc tieu hop le o r, cung van toc voi minh (rdot = 0) trong n chu ky."""
+    o = own(v=v)
+    t = t0
+    for _ in range(n):
+        g.step(track(r=r, rdot=0.0, t=t), o)
+        t += dt
+    return o, t
+
+
+def test_coast_flies_on_at_last_target_velocity_then_decays():
+    g = Guidance(CFG)
+    o, t = _warm(g)
+    c = g.step(track(r=15.0, status=TrackStatus.COAST, t=t), o)
+    assert "coast" in c.reason and abs(c.vel_ned[0] - 10.0) < 0.3
+    # mat 2 s: toc do ngang giam theo blind_decel (1 m/s^2 sau 0.5 s) nhung khong ve 0
+    for k in range(1, 61):
+        c = g.step(track(r=15.0, status=TrackStatus.COAST, t=t + k / 30.0), o)
+    assert 7.0 < c.vel_ned[0] < 9.7
+    # het blind_mem_max_s: bo nho het han -> khong con dung de bay tiep
+    assert not g._mem_ok(t + CFG.blind_mem_max_s + 1.0)
+
+
+def test_blind_flight_after_tracker_lost_turns_yaw_to_last_los():
+    g = Guidance(CFG)
+    u = unit((1.0, 0.5, 0.0))
+    o = own(v=(10.0, 5.0, 0.0))
+    t = 10.0
+    for _ in range(60):
+        g.step(track(r=15.0, u=tuple(u), rdot=0.0, t=t), o)
+        t += 1.0 / 30
+    lost = TrackState(t=t + 1.0, status=TrackStatus.LOST)
+    c = g.step_blind(lost, o)
+    assert "blind" in c.reason and not c.reason.startswith("brake")
+    assert c.vel_ned[0] > 5.0 and c.vel_ned[1] > 2.0          # van bay tiep, khong ve 0
+    yaw_los = math.atan2(u[1], u[0])
+    assert 0.0 < c.yaw_rad <= yaw_los + 1e-9                  # quay ve huong ngam cuoi (co gioi han toc do doi)
+    # khong co bo nho -> phanh
+    c0 = Guidance(CFG).step_blind(lost, o)
+    assert c0.vel_ned == (0.0, 0.0, 0.0) and c0.reason.startswith("brake")
+
+
+def test_blind_flight_never_closes_beyond_target_velocity():
+    g = Guidance(CFG)
+    o, t = _warm(g)
+    for k in range(1, 90):
+        c = g.step_blind(TrackState(t=t + k / 30.0, status=TrackStatus.LOST), o)
+        assert float(np.dot(c.vel_ned, (1.0, 0.0, 0.0))) <= 10.0 + 1e-6
+
+
+def test_closing_speed_limited_by_braking_distance():
+    cfg = GuidanceConfig(cam_tilt_up_deg=0.0, a_decel_mps2=0.5, range_min_m=10.0, close_speed_max_mps=5.0,
+                         a_max_mps2=50.0, jerk_max_mps3=1e4, kp_range=5.0, range_set_m=12.0)
+    o = own(v=(5.0, 0.0, 0.0))
+    p = prev_cmd(v=(5.0, 0.0, 0.0))
+    near = compute_guidance(track(r=12.4, rdot=0.0), o, cfg, p)     # kp*e = 2 m/s > sqrt(2*0.5*2.4) = 1.55\n    cap = math.sqrt(2 * 0.5 * 2.4)\n    assert 5.0 + cap - 0.05 < near.vel_ned[0] <= 5.0 + cap + 1e-6          # <= v_t + sqrt(2 a (r - r_min)), va dung cham tran
+    far = compute_guidance(track(r=40.0, rdot=0.0), o, cfg, p)
+    assert far.vel_ned[0] > 5.0 + 2.0                                        # xa: khong bi cat boi quang phanh
+
+
+def test_range_invalid_after_reacquire_is_smooth_and_does_not_close():
+    g = Guidance(CFG)
+    o, t = _warm(g)
+    prev = None
+    for k in range(1, 91):                      # mat han 3 s: bay tiep
+        prev = g.step_blind(TrackState(t=t + k / 30.0, status=TrackStatus.LOST), o)
+    t2 = t + 91 / 30.0
+    u = (1.0, 0.0, 0.0)
+    for k in range(10):                         # bat lai, ~8 khung range_valid = False, khong co range_m
+        tr = TrackState(t=t2 + k / 30.0, status=TrackStatus.TRACK, los_ned=u, los_rate_ned=(0.3, 0.3, 0.3),
+                        range_m=None, range_valid=False)
+        c = g.step(tr, o)
+        assert "coast" in c.reason                                # dung bo nho, khong roi ve che do khop van toc ban than
+        assert float(np.dot(c.vel_ned, u)) <= float(np.dot(prev.vel_ned, u)) + 1e-6   # khong tien lai gan hon
+        dv = np.linalg.norm(np.array(c.vel_ned) - np.array(prev.vel_ned))
+        assert dv / (1.0 / 30) <= CFG.a_lat_mps2 + CFG.a_max_mps2 + 1e-6               # khong giat
+        prev = c
+
+
+def test_vertical_centering_ignores_pitch_transients():
+    cfg = GuidanceConfig(cam_tilt_up_deg=10.0)
+    u = unit((1.0, 0.0, -0.1))
+    level = compute_guidance(track(r=15.0, u=tuple(u)), own(), cfg, prev_cmd())
+    pitched = compute_guidance(track(r=15.0, u=tuple(u)), own(q=tuple(quat_from_euler(0.0, math.radians(25.0), 0.0))),
+                               cfg, prev_cmd())
+    assert abs(level.vel_ned[2] - pitched.vel_ned[2]) < 1e-9
+
+def test_blind_hold_never_faster_than_own_speed():
+    g = Guidance(CFG)
+    o, t = _warm(g, v=(10.0, 0.0, 0.0))
+    slow = own(v=(4.0, 0.0, 0.0))                                # nay minh cham hon van toc muc tieu nho duoc
+    g.prev = prev_cmd(v=(4.0, 0.0, 0.0), dt=1.0 / 30, t=t)
+    g.prev_accel = (0.0, 0.0, 0.0)
+    c = g.step(track(r=15.0, status=TrackStatus.COAST, t=t), slow)
+    assert c.vel_ned[0] <= 4.0 + 1e-6
+
+
+def test_blind_keeps_braking_when_braking_at_loss():
+    g = Guidance(CFG)
+    o, t = _warm(g, v=(8.0, 0.0, 0.0))
+    g.prev = prev_cmd(v=(6.0, 0.0, 0.0), dt=1.0 / 30, t=t)
+    g.prev_accel = (-3.0, 0.0, 0.0)                              # dang phanh 3 m/s^2 luc mat muc tieu
+    c = g.step_blind(TrackState(t=t + 1.0 / 30, status=TrackStatus.LOST), own(v=(7.0, 0.0, 0.0)))
+    assert c.vel_ned[0] < 6.0 - 0.05                             # khong tang len theo van toc muc tieu cu (8 m/s)

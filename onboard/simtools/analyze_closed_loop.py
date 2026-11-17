@@ -7,7 +7,7 @@ Tieu chi (kich ban none / blackout):
   - sai so TB |d - range| < tol (3 m) trong cua so; cua so du 120 s; muc tieu doi huong >= 2 lan trong cua so
   - khoang cach that min >= 8 m tren TOAN BO du lieu (tu luc cat canh toi khi ca hai dung)
   - ty le thoi gian supervisor o TRACK >= 90% trong cua so (tu app_log.csv)
-  - khoang trong du lieu truth toi da <= 0.2 s va tan so ghi >= 10 Hz
+  - khoang trong du lieu truth toi da <= 0.2 s CHI trong cua so do (toan chuyen chi in tham khao), tan so ghi >= 10 Hz
   - app thoat 0 (app.rc)
 Kich ban disengage: do do tre tu lenh doi mode toi luc app ngung gui lenh (<= 0.5 s); khong cham sai so.
 """
@@ -69,7 +69,15 @@ def main():
     dur = T[-1] - T[0]
     gaps = [T[i + 1] - T[i] for i in range(len(T) - 1)]
     lines.append("scenario=%s speed=%.0f  truth rows=%d  duration=%.1f s" % (scenario, a.speed, len(T), dur))
-    crit("khoang trong truth toi da <= 0.2 s", max(gaps) <= 0.2, "max gap = %.3f s" % max(gaps))
+    lines.append("khoang trong truth TOAN chuyen (tham khao, khong chan): max %.3f s" % max(gaps))
+    t_ws0 = ev.get("t_ws")
+    if scenario == "disengage" or t_ws0 is None:
+        crit("khoang trong truth toi da <= 0.2 s", max(gaps) <= 0.2, "max gap = %.3f s (toan chuyen)" % max(gaps))
+    else:
+        # nguoi dung quyet: nguong 0.2 s CHI ap trong cua so do (pha ket noi app ngoai cua so khong tinh)
+        wg = [T[i + 1] - T[i] for i in range(len(T) - 1) if t_ws0 <= T[i] and T[i + 1] <= t_ws0 + a.window]
+        crit("khoang trong truth toi da <= 0.2 s (trong cua so do)", (max(wg) if wg else float("inf")) <= 0.2,
+             "max gap trong cua so = %.3f s" % (max(wg) if wg else float("nan")))
     crit("tan so ghi truth >= 10 Hz", len(T) / max(dur, 1e-6) >= 10.0, "%.1f Hz" % (len(T) / dur))
     # khoang cach that min tren toan chuyen bay
     imin = min(range(len(D)), key=lambda i: D[i])
@@ -140,7 +148,10 @@ def main():
         if abs(angdiff(hs[n], hs[k])) >= 30.0 and tw[n] - last_turn_t > 8.0:
             turns += 1
             last_turn_t = tw[n]
-    crit("muc tieu doi huong >= 2 lan trong cua so", turns >= 2, "%d lan" % turns)
+    if ev.get("straight"):
+        lines.append("muc tieu bay thang: bo tieu chi doi huong (%d lan quan sat)" % turns)
+    else:
+        crit("muc tieu doi huong >= 2 lan trong cua so", turns >= 2, "%d lan" % turns)
 
     # TRACK% theo supervisor + range_valid trong cua so (app log)
     if app:
