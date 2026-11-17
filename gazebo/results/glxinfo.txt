@@ -1,0 +1,29 @@
+﻿(env above)
+=== A default
+    Accelerated: no
+OpenGL renderer string: llvmpipe (LLVM 20.1.2, 256 bits)
+OpenGL version string: 4.5 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.4
+=== B GALLIUM=d3d12
+    Accelerated: yes
+OpenGL renderer string: D3D12 (AMD Radeon RX 9060 XT)
+OpenGL version string: 4.6 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.4
+=== C GALLIUM=d3d12 + adapter 9060
+    Accelerated: yes
+OpenGL renderer string: D3D12 (AMD Radeon RX 9060 XT)
+OpenGL version string: 4.6 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.4
+=== D adapter 9060 only
+    Accelerated: no
+OpenGL renderer string: llvmpipe (LLVM 20.1.2, 256 bits)
+OpenGL version string: 4.5 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.4
+=== E software
+    Accelerated: no
+OpenGL renderer string: llvmpipe (LLVM 20.1.2, 256 bits)
+OpenGL version string: 4.5 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.4
+=== F GALLIUM=d3d12 + adapter name 'Radeon(TM) Graphics' (iGPU?)
+    Accelerated: yes
+OpenGL renderer string: D3D12 (AMD Radeon RX 9060 XT)
+OpenGL version string: 4.6 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.4
+=== G EGL surfaceless d3d12
+OpenGL core profile renderer: D3D12 (AMD Radeon RX 9060 XT)
+OpenGL compatibility profile renderer: D3D12 (AMD Radeon RX 9060 XT)
+OpenGL ES profile renderer: D3D12 (AMD Radeon RX 9060 XT)

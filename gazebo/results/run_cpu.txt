@@ -1,0 +1,32 @@
+﻿=== RUN cpu iris_runway.sdf 2026-11-17T06:28:40+00:00
+ 06:28:40 up  1:48,  1 user,  load average: 13.06, 13.51, 13.10
+PIDS gz=15687 sitl=15770
+RTF idle(gz+sitl+camera sensor 10Hz, no stream): mean=0.423 min=0.371 n=6
+RTF flying(takeoff): mean=1.000 min=0.999 n=6
+heartbeat sys=1 after 0.1s
+armed=True guided=True after 36.5s
+takeoff ack: COMMAND_ACK {command : 22, result : 0, progress : 0, result_param2 : 0, target_system : 255, target_component : 0}
+armed flag: True mode 4
+max_alt=10.22m target=10.0 reached95%_after=4.563521385192871
+enable topic: /world/iris_runway/model/iris_with_gimbal/model/gimbal/link/pitch_link/sensor/camera/image/enable_streaming
+RTF camera streaming+hover: mean=1.000 min=0.999 n=6
+--- resources
+ 06:30:25 up  1:50,  1 user,  load average: 10.61, 13.07, 13.02
+    PID %CPU   RSS     ELAPSED COMMAND
+  15687  199 919804      01:49 gz sim -s -r --headless-rendering -v3 iris_runway.sdf
+  15770  5.7  8968       01:29 /home/drone/ardupilot/build/sitl/bin/arducopter --model JSON --speedup 1 --slav
+Tasks:  34 total,   2 running,  32 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 14.8 us,  5.6 sy,  7.4 ni, 71.0 id,  0.0 wa,  0.0 hi,  1.2 si,  0.0 st 
+MiB Mem :  15531.9 total,   5742.7 free,   2267.7 used,   7934.7 buff/cache     
+CAM cpu: resolution=(640, 480) frames=213 first_frame_after=2.8s fps=10.17 (span 20.8s) png_saved=3
+leftover:
+wsl : /mnt/d/Personal/Drone-Tracking/gazebo/scripts/20_full.sh: line 33: 15770 Killed                  
+~/ardupilot/build/sitl/bin/arducopter --model JSON --speedup 1 --slave 0 --sim-address=127.0.0.1 -I0 --defaults $HOME/a
+rdupilot/Tools/autotest/default_params/copter.parm,$HOME/ardupilot/Tools/autotest/default_params/gazebo-iris.parm > 
+$L/run_sitl_$RENDER.log 2>&1
+At line:1 char:302
++ ... tch {} } }; wsl -d Ubuntu-24.04 -- bash /mnt/d/Personal/Drone-Trackin ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (/mnt/d/Personal...RENDER.log 2>&1:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

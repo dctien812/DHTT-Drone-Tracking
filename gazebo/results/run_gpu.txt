@@ -1,0 +1,48 @@
+﻿=== RUN gpu iris_runway.sdf 2026-11-17T06:26:32+00:00
+ 06:26:32 up  1:46,  1 user,  load average: 12.90, 13.53, 13.03
+PIDS gz=15316 sitl=15348
+RTF idle(gz+sitl+camera sensor 10Hz, no stream): mean=0.347 min=0.189 n=6
+RTF flying(takeoff): mean=0.797 min=0.312 n=7
+heartbeat sys=1 after 0.1s
+  [  2.0s] Arm: System not initialised
+  [  2.0s] ACK cmd=400 res=4
+  [  2.0s] Calibrating barometer
+  [  4.2s] Arm: Accels inconsistent
+  [  4.2s] Arm: Compass 1 not healthy
+  [  4.2s] Arm: GPS 1 still configuring this GPS
+  [  4.2s] GPS 1: was not found
+  [  4.2s] Arm: Battery 1 unhealthy
+  [  4.2s] Arm: Rangefinder 1: Not Connected
+  [  4.2s] Field Elevation Set: 584m
+  [  4.2s] RC7: SaveWaypoint LOW
+  [  4.2s] RC8: PrecisionLoiter MIDDLE
+  [  7.1s] EKF3 IMU0 tilt alignment complete
+  [  7.1s] EKF3 IMU1 tilt alignment complete
+  [  7.1s] EKF3 IMU1 MAG0 initial yaw alignment complete
+  [  7.1s] EKF3 IMU0 MAG0 initial yaw alignment complete
+  [ 17.9s] Arm: Gyros inconsistent
+  [ 25.8s] EKF3 IMU0 origin set
+  [ 25.8s] EKF3 IMU1 origin set
+  [ 25.8s] PreArm: Gyros inconsistent
+  [ 33.8s] ACK cmd=400 res=0
+  [ 33.8s] Arming motors
+armed=True guided=True after 34.4s
+takeoff ack: COMMAND_ACK {command : 22, result : 0, progress : 0, result_param2 : 0, target_system : 255, target_component : 0}
+armed flag: True mode 4
+max_alt=10.22m target=10.0 reached95%_after=5.982000827789307
+enable topic: /world/iris_runway/model/iris_with_gimbal/model/gimbal/link/pitch_link/sensor/camera/image/enable_streaming
+RTF camera streaming+hover: mean=0.906 min=0.222 n=7
+--- resources
+ 06:28:17 up  1:48,  1 user,  load average: 13.55, 13.61, 13.12
+    PID %CPU   RSS     ELAPSED COMMAND
+  15316  103 608868      01:48 gz sim -s -r --headless-rendering -v3 iris_runway.sdf
+  15348  7.4  8948       01:28 /home/drone/ardupilot/build/sitl/bin/arducopter --model JSON --speedup 1 --slav
+Tasks:  39 total,   3 running,  36 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  5.5 us,  3.0 sy, 54.9 ni, 35.4 id,  0.0 wa,  0.0 hi,  1.2 si,  0.0 st 
+MiB Mem :  15531.9 total,   2315.2 free,   5705.2 used,   7924.6 buff/cache     
+CAM gpu: resolution=(640, 480) frames=204 first_frame_after=2.7s fps=9.70 (span 20.9s) png_saved=3
+leftover:
+/mnt/d/Personal/Drone-Tracking/gazebo/scripts/20_full.sh: line 33: 15348 Killed                  
+~/ardupilot/build/sitl/bin/arducopter --model JSON --speedup 1 --slave 0 --sim-address=127.0.0.1 -I0 --defaults $HOME/a
+rdupilot/Tools/autotest/default_params/copter.parm,$HOME/ardupilot/Tools/autotest/default_params/gazebo-iris.parm > 
+$L/run_sitl_$RENDER.log 2>&1
