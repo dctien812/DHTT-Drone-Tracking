@@ -174,6 +174,32 @@ def _fill(obj: Any, data: Dict[str, Any], path: str) -> None:
             setattr(obj, k, v)
 
 
+# Ho so co ten (chi ghi cac khoa khac mac dinh; mac dinh cu GIU NGUYEN). Dung: profile_dict(ten) -> dict nhu file JSON.
+PROFILES: Dict[str, Dict[str, Any]] = {
+    # cau hinh NGHIEM THU B6b: khop gat mot truc on dinh pitch + giu 25 m (muc tieu bay thang 10 m/s roi phanh ~8 m/s^2)
+    "accept_gimbal_r25": {
+        "guidance": {"range_set_m": 25.0},
+        "camera": {"gimbal_enabled": True},
+    },
+}
+
+
+def profile_dict(name: str) -> Dict[str, Any]:
+    """Ban sao dict cau hinh cua ho so co ten (hop le cho load_config qua file JSON)."""
+    if name not in PROFILES:
+        raise ValueError("ho so la: %s (co: %s)" % (name, ", ".join(sorted(PROFILES))))
+    return json.loads(json.dumps(PROFILES[name]))
+
+
+def load_profile(name: str) -> AppConfig:
+    """AppConfig tu ho so co ten."""
+    cfg = AppConfig()
+    _fill(cfg, profile_dict(name), "config")
+    cfg.__post_init__()
+    validate(cfg)
+    return cfg
+
+
 def load_config(path: Optional[str] = None) -> AppConfig:
     """Nap AppConfig; path None -> mac dinh. Duoi .toml hoac .json."""
     cfg = AppConfig()

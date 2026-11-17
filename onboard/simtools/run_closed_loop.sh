@@ -5,6 +5,8 @@
 #   STRAIGHT=1 (muc tieu bay thang, khong re: target.py --first-turn rat lon), SPEEDUP (mac dinh 1),
 #   CAM_FX (px), CAM_TILT (do), GIMBAL=1 (khop gat on dinh pitch) -> ghi $OUT/app_cfg.json, analyzer doc lai de tinh hinh hoc camera.
 #   RANGE (15; khoang cach dat, truyen cho helper, bo cham VA app qua file cau hinh tam neu CONFIG khong dat), CONFIG (file TOML/JSON cua app, tuy chon), MAX_WALL (giay that, 900),
+#   PROFILE (ten ho so cau hinh trong dtrack/config.py PROFILES, vd accept_gimbal_r25; ghi de RANGE/CONFIG),
+#   TARGET_PY (script muc tieu, mac dinh sim/target.py; ca phanh mem: simtools/target_softbrake.py voi TARGET_DECEL m/s^2),
 #   OUT_ROOT (mac dinh onboard/simtools/out).
 # Chi kill cac PID do chinh script nay tao (khong pkill). Khong goi sim/run_chase.sh.
 # Exit code = exit code cua analyze_closed_loop.py (0 PASS, 1 FAIL); app thoat khac 0 -> FAIL.
@@ -16,6 +18,13 @@ SCENARIO="${SCENARIO:-none}"
 SPEEDUP="${SPEEDUP:-1}"
 RANGE="${RANGE:-15}"
 MAX_WALL="${MAX_WALL:-900}"
+PY="${PY:-$HOME/venv-ardupilot/bin/python}"
+# PROFILE=<ten ho so trong dtrack/config.py PROFILES>: cau hinh app lay tu ho so; RANGE lay theo ho so
+PROFILE="$(printf '%s' "${PROFILE:-}" | tr -d '\r\n')"
+if [ -n "$PROFILE" ]; then
+  RANGE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && "$PY" -c 'import sys;from dtrack.config import profile_dict;print(profile_dict(sys.argv[1])["guidance"]["range_set_m"])' "$PROFILE")" \
+    || { echo "ho so khong hop le: $PROFILE" >&2; exit 4; }
+fi
 # bo CR/LF dinh vao tham so (lenh goi tu Windows co the dinh CRLF) de ten thu muc ket qua khong co '\r'
 STRAIGHT="${STRAIGHT:-0}"
 for _v in SPEED SEED SCENARIO SPEEDUP RANGE MAX_WALL STRAIGHT; do
@@ -59,7 +68,8 @@ PIDS+=("$!")
 PIDS+=("$!")
 TARGS=()
 [ "$STRAIGHT" = "1" ] && TARGS=(--first-turn 1000000)
-(cd "$SIM" && exec "$PY" "$SIM/target.py" --speed "$SPEED" "${TARGS[@]}" --go-file "$OUT/go" --stop-file "$OUT/stop") \
+TARGET_PY="${TARGET_PY:-$SIM/target.py}"      # TARGET_PY=$HERE/target_softbrake.py (+ TARGET_DECEL) cho ca phanh mem
+(cd "$SIM" && exec "$PY" "$TARGET_PY" --speed "$SPEED" "${TARGS[@]}" --go-file "$OUT/go" --stop-file "$OUT/stop") \
   > "$OUT/target.log" 2>&1 &
 PIDS+=("$!")
 
@@ -78,7 +88,10 @@ done
 APP_RC=99
 if [ -f "$OUT/ready" ]; then
   CFGARG=()
-  if [ -n "${CONFIG:-}" ]; then CFGARG=(--config "$CONFIG"); cp "$CONFIG" "$OUT/app_cfg.json" 2>/dev/null || true
+  if [ -n "$PROFILE" ]; then
+    (cd "$ONBOARD" && "$PY" -c 'import json,sys;from dtrack.config import profile_dict;print(json.dumps(profile_dict(sys.argv[1])))' "$PROFILE") > "$OUT/app_cfg.json"
+    CFGARG=(--config "$OUT/app_cfg.json")
+  elif [ -n "${CONFIG:-}" ]; then CFGARG=(--config "$CONFIG"); cp "$CONFIG" "$OUT/app_cfg.json" 2>/dev/null || true
   elif [ "$RANGE" != "15" ] || [ -n "${CAM_FX:-}" ] || [ "${GIMBAL:-0}" = "1" ] || [ -n "${CAM_TILT:-}" ]; then
     # cau hinh tam tu bien moi truong: RANGE (khoang cach giu), CAM_FX (tieu cu px), CAM_TILT (do), GIMBAL=1 (khop gat)
     RANGE="$RANGE" "$PY" -c 'import json,os
