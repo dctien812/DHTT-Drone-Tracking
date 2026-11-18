@@ -424,3 +424,4 @@
 ## 2026-11-18 ~22:15 · TẠM DỪNG theo yêu cầu người dùng (mai làm tiếp)
 - Trưởng phòng đặt `onboard/simtools/out/_STOP`; nhắn 07 để lần đang chạy (đợt D lần 4) kết thúc rồi dừng. Đợt D xong 3/14 lúc đặt cờ, cả ba PASS: giữ 25 m, dive15 s1–s3, δ_max 110°, giảm tốc cuối ra khung 0,00 s (trước: 12,32 / 7,49 / 8,13 s), δ tới 110,0°.
 - Cập nhật `.office/checkpoint.md` (mục "CẬP NHẬT LÚC TẠM DỪNG").
+- 22:20 · 07 xác nhận lô đợt D đã thoát (4/14 xong, cả 4 PASS; còn 10 lần, lệnh chạy tiếp ghi ở checkpoint). Không còn agent hay mô phỏng nào chạy.

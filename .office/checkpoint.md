@@ -67,3 +67,10 @@ Chưa bắt đầu:
 3. Báo cáo cuối giai đoạn 1 (kèm đề nghị mặc định: giữ 15 m, nhìn xuống 12°, khớp 10–110°), DỪNG chờ người dùng trước khi sang giai đoạn 2.
 4. Pi: khi có nguồn mới, đọc log lần sập, chạy trang lab 2 luồng, đo 60 s, kiểm đường hầm (tắt demo cũ ở cổng 8080 trước).
 5. Cập nhật `HANDOFF.md`, `README.md` gốc.
+
+## Trạng thái cuối cùng lúc dừng (07 đã báo về; không còn agent hay mô phỏng nào chạy)
+- Lô đợt D tự thoát khi gặp `_STOP`; `pgrep -x arducopter` trống; `git status` sạch. Cờ `_STOP` còn nguyên: XÓA trước khi chạy tiếp.
+- Đợt D xong 4/14, cả 4 PASS (giữ 25 m, δ_max 110°): dive15 s1, s2, s3 và dive25 s1 (`out/20261118_145823`, `150242`, `150701`, `151126`). Ra khung cắm / giảm tốc cuối: 0 / 0 s ở cả 4 (đợt B với 90°: 12,32 / 7,49 / 8,13 / 7,41 s). d3 nhỏ nhất sau t_go 20,83–21,71 m; δ lớn nhất 110,0°, vẫn bão hòa 17–19% số mẫu sau lệnh dừng mục tiêu nhưng không ra khung; không có sự kiện δ rơi sâu. Tóm tắt: `out/_acceptance_gimbalD_20261118_145823.txt`.
+- CHƯA chạy 10 lần. Lệnh (trong `onboard/simtools/out`, dùng TAG khác để không ghi đè log):
+  `MATRIX='plane_r25_gimbal_e12:2:none:dive25:25 plane_r25_gimbal_e12:3:none:dive25:25 plane_r15_gimbal_e12:1:none:dive15:15 plane_r15_gimbal_e12:2:none:dive15:15 plane_r15_gimbal_e12:3:none:dive15:15 plane_r15_gimbal_e12:1:none:dive25:15 plane_r15_gimbal_e12:2:none:dive25:15 plane_r15_gimbal_e12:3:none:dive25:15 plane_r15_gimbal_e12:1:blackout:soft:15 plane_r15_gimbal_e12:1:disengage:soft:15' TAG=gimbalD2 bash run_gimbal_batchD.sh`
+  Lưu ý: `run_gimbal_batchD.sh` nằm trong `out/` nên không có trong git; nếu mất thì dựng lại theo `run_acceptance.sh` với biến `CONFIG`.
