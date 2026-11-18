@@ -1,6 +1,4 @@
-# Drone Interceptor: drone tự bám một mục tiêu bay
-
-Tên dự án là **Drone Interceptor** (đặt ngày 2026-11-18). Thư mục `D:\Personal\Drone-Tracking`, repo `DHTT-Drone-Tracking` và gói mã `dtrack` giữ tên cũ. Phạm vi không đổi: chỉ bám và giữ khoảng cách an toàn.
+# Drone-Tracking: drone tự bám một drone khác
 
 Dự án làm drone 8 inch tự bay theo một drone khác bằng camera và giữ khoảng cách an toàn. Hiện đang ở giai đoạn mô phỏng và demo trong phòng lab. **Chưa có lần bay thật nào.**
 
