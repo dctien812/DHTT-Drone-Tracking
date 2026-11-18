@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import os
 import socket
 from dataclasses import dataclass, field
@@ -96,6 +97,8 @@ def apply_calib(cfg: Config, path: str) -> Config:
         vals = (float(k[0][0]), float(k[1][1]), float(k[0][2]), float(k[1][2]))
     except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
         raise ConfigError(f"Khong doc duoc file --calib ({type(e).__name__}: {e})") from e
+    if not all(math.isfinite(v) for v in vals):
+        raise ConfigError("File --calib: fx/fy/cx/cy phai la so huu han")
     if w <= 0 or h <= 0 or vals[0] <= 0 or vals[1] <= 0:
         raise ConfigError("File --calib: width/height/fx/fy phai > 0")
     cfg.calib, cfg.calib_size = path, (w, h)
