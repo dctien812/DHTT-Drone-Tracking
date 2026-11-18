@@ -23,6 +23,7 @@ from typing import Optional, Tuple
 import numpy as np
 
 from .config import GuidanceConfig, make_camera
+from .elev_ramp import ElevRefRamp
 from .types import GuidanceCommand, OwnState, TrackState, TrackStatus, Vec3
 
 ZERO: Vec3 = (0.0, 0.0, 0.0)
@@ -74,7 +75,8 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
                         prev: Optional[GuidanceCommand] = None,
                         prev_accel: Optional[Vec3] = None,
                         v_t_hold: Optional[Vec3] = None,
-                        info: Optional[dict] = None) -> Tuple[GuidanceCommand, Vec3]:
+                        info: Optional[dict] = None,
+                        elev_ref_deg: Optional[float] = None) -> Tuple[GuidanceCommand, Vec3]:
     """Nhu compute_guidance nhung tra them gia toc lenh (de gioi han jerk o chu ky ke).
 
     v_t_hold: van toc muc tieu NHO duoc (NED); khi COAST thi dung no thay cho uoc luong hien tai.
@@ -178,6 +180,8 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
         a_al = float(np.asarray(prev_accel, float)[:2] @ (v_prev[:2] / sp_p))
     e_ref = max(-cfg.elev_ref_max_deg, min(cfg.elev_ref_max_deg,
                                            cfg.target_elev_ref_deg - cfg.elev_accel_comp * math.degrees(math.atan2(a_al, 9.81))))
+    if elev_ref_deg is not None:                   # doc chuyen tiep: dung thang, khong cat, khong bu gia toc
+        e_ref = elev_ref_deg
     err = max(-0.5, min(0.5, err - math.radians(cfg.cam_tilt_up_deg - e_ref)))
     vc = max(-cfg.vert_center_max_mps, min(cfg.vert_center_max_mps, cfg.kp_vert_center * r_est * math.tan(err)))
     w = np.array([0.0, 0.0, vc])
@@ -284,9 +288,15 @@ class Guidance:
 
     def __init__(self, cfg: Optional[GuidanceConfig] = None):
         self.cfg = cfg or GuidanceConfig()
+        self._ramp: Optional[ElevRefRamp] = (
+            ElevRefRamp(self.cfg.target_elev_ref_deg, self.cfg.elev_ramp_dps, self.cfg.dt_max_s)
+            if self.cfg.elev_ramp_enabled else None)
         self.reset()
 
     def reset(self) -> None:
+        if self._ramp is not None:
+            self._ramp.reset()
+        self.last_elev_ref_deg: Optional[float] = None
         self._last_r: Optional[float] = None
         self.prev: Optional[GuidanceCommand] = None
         self.prev_accel: Optional[Vec3] = ZERO
@@ -331,8 +341,11 @@ class Guidance:
         _, _, u_m, r_m = self._mem
         synth = TrackState(t=track.t, status=TrackStatus.COAST, los_ned=tuple(float(c) for c in u_m),
                            los_rate_ned=ZERO, range_m=r_m, range_rate_mps=0.0, range_valid=True)
+        er = self._ramp.update(track.t, None) if self._ramp is not None else None
+        self.last_elev_ref_deg = er
         cmd, acc = compute_guidance_ex(synth, own, self.cfg, self.prev, self.prev_accel,
-                                       v_t_hold=self._safe_hold(self._hold_velocity(track.t), own, track.t))
+                                       v_t_hold=self._safe_hold(self._hold_velocity(track.t), own, track.t),
+                                       elev_ref_deg=er)
         cmd = dataclasses.replace(cmd, reason=cmd.reason + "+blind")
         self.prev, self.prev_accel = cmd, acc
         return cmd
@@ -358,7 +371,18 @@ class Guidance:
         hold = (self._safe_hold(self._hold_velocity(track.t), own, track.t)
                 if (mem_ok and track.status == TrackStatus.COAST) else None)
         info: dict = {}
-        cmd, acc = compute_guidance_ex(track, own, self.cfg, self.prev, self.prev_accel, hold, info)
+        er = None
+        if self._ramp is not None:
+            el = None
+            if track.status == TrackStatus.TRACK and track.los_ned is not None and _finite_vec(track.los_ned):
+                u = np.asarray(track.los_ned, float)
+                nu = float(np.linalg.norm(u))
+                if nu > _EPS:
+                    el = math.asin(max(-1.0, min(1.0, -float(u[2]) / nu)))
+            er = self._ramp.update(track.t, el)
+        self.last_elev_ref_deg = er
+        cmd, acc = compute_guidance_ex(track, own, self.cfg, self.prev, self.prev_accel, hold, info,
+                                       elev_ref_deg=er)
         if info and math.isfinite(track.t) and _finite_vec(info["v_t"]):
             self._update_mem(track.t, info)
         self.prev, self.prev_accel = cmd, acc
