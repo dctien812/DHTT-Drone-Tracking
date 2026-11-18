@@ -95,6 +95,7 @@ def b4_metrics(a, truth, app, ev, scenario, res_out=None):
     import numpy as np
     from dtrack.geometry import quat_from_euler, quat_to_matrix
     from dtrack.config import make_camera
+    from dtrack.gimbal import camera_attitude
     from simtools.gimbal_model import GimbalModel
     cfgp = os.path.join(a.out, "app_cfg.json")
     cam, shape = {}, {}
@@ -109,8 +110,14 @@ def b4_metrics(a, truth, app, ev, scenario, res_out=None):
     W, H = int(cam.get("width", 1456)), int(cam.get("height", 1088))
     gm = GimbalModel(cam.get("gimbal_travel_deg", 50.0), cam.get("gimbal_rate_dps", 300.0),
                      cam.get("gimbal_lag_s", 0.05)) if cam.get("gimbal_enabled") else None
-    Rbc = np.array(make_camera(tilt, fx, fx, W, H).R_body_cam)
+    gact = cfg_gimbal_enabled(a.out)      # khop gat chu dong: doc goc THAT tu gimbal.csv, bo qua camera.tilt_up_deg
+    if gact:
+        gm, tilt = None, 0.0
+    Rbc = np.array(make_camera(0.0 if gact else tilt, fx, fx, W, H).R_body_cam)
     T = np.array([fl(r, "t") for r in truth])
+    if gact:
+        tg, dg, sg = gimbal_series(a, T, ev)
+        dint = np.interp(T, tg, dg)
     col = lambda k: np.array([fl(r, k) for r in truth])
     u = np.stack([col("tgt_n") - col("ch_n"), col("tgt_e") - col("ch_e"), -(col("tgt_alt") - col("ch_alt"))], 1)
     D = col("d3")
@@ -124,6 +131,8 @@ def b4_metrics(a, truth, app, ev, scenario, res_out=None):
         qc = qb
         if gm is not None:
             qc, delta[i] = gm.step(T[i], tuple(qb))
+        elif gact:
+            qc = camera_attitude(qb, float(dint[i]))
         ray = (quat_to_matrix(qc) @ Rbc).T @ u[i]
         if ray[2] <= 1e-6:
             out_of[i] = True
@@ -185,6 +194,25 @@ def b4_metrics(a, truth, app, ev, scenario, res_out=None):
                          "rate_max": math.degrees(float(rate.max()))}
         lines.append("B4 khop gat: hanh trinh dung %.1f..%.1f do (so voi danh dinh), toc do quay max %.0f do/s" % (
             res["gimbal"]["delta_min"], res["gimbal"]["delta_max"], res["gimbal"]["rate_max"]))
+    if gact:
+        mg = (T >= t_go) & (T <= t_end)
+        theta = -np.degrees(pp)
+        dd = np.degrees(dint)
+        sat = sg[np.clip(np.searchsorted((tg[:-1] + tg[1:]) / 2.0, T), 0, len(tg) - 1)]    # mau gimbal.csv gan nhat
+        sm = sat[mg]
+        rate = np.abs(np.diff(dd[mg])) / np.maximum(np.diff(T[mg]), 1e-6)
+        gph = {}
+        for name, (ta, tb) in phases.items():
+            m = (T >= ta) & (T <= tb)
+            if m.any():
+                gph[name] = {"delta_med": float(np.median(dd[m])), "delta_min": float(dd[m].min()), "delta_max": float(dd[m].max()),
+                             "theta_med": float(np.median(theta[m])), "theta_max": float(theta[m].max()), "spd_med": float(np.median(spd[m]))}
+        res["gimbal"] = {"delta_min": float(dd[mg].min()), "delta_max": float(dd[mg].max()), "delta_med": float(np.median(dd[mg])),
+                         "rate_max": float(rate.max()) if len(rate) else 0.0,
+                         "n_sat_enter": int(np.sum(sm[1:] & ~sm[:-1])) + int(sm[0]), "n_sat": int(sm.sum()), "phases": gph}
+        g = res["gimbal"]
+        lines.append("B4 khop gat (chu dong): delta that %.1f..%.1f do (trung vi %.1f), toc do quay max %.0f do/s, cham gioi han %d lan / %d mau" % (
+            g["delta_min"], g["delta_max"], g["delta_med"], g["rate_max"], g["n_sat_enter"], g["n_sat"]))
     t_ws = ev.get("t_ws")
     if t_ws is not None:
         w = (T >= t_ws) & (T <= t_ws + a.window)
@@ -208,6 +236,53 @@ def b4_metrics(a, truth, app, ev, scenario, res_out=None):
     if res_out is not None:
         res_out.update(res)
     return lines
+
+def load_gimbal_csv(path):
+    """gimbal.csv -> (t [s], delta_act [rad], sat [bool]). Nem ValueError/OSError khi thieu file/cot t, delta_act_deg, co NaN, t khong tang chat."""
+    rows = read_csv(path)
+    if len(rows) > 1 and None in rows[-1].values():     # dong cuoi bi cat do (app bi giet khi chua flush): bo
+        rows = rows[:-1]
+    if not rows or "t" not in rows[0] or "delta_act_deg" not in rows[0]:
+        raise ValueError("gimbal.csv rong hoac thieu cot t/delta_act_deg: %s" % path)
+    t = [float(r["t"]) for r in rows]
+    d = [float(r["delta_act_deg"]) for r in rows]
+    if not (all(math.isfinite(x) for x in t) and all(math.isfinite(x) for x in d)):
+        raise ValueError("gimbal.csv co gia tri NaN/inf")
+    if any(t[i + 1] <= t[i] for i in range(len(t) - 1)):
+        raise ValueError("gimbal.csv: t khong tang chat")
+    sat = [bool(int(float(r["sat"]))) for r in rows] if "sat" in rows[0] else [False] * len(rows)
+    import numpy as np
+    return np.array(t), np.radians(np.array(d)), np.array(sat, bool)
+
+
+def cfg_gimbal_enabled(out):
+    """app_cfg.json (JSON thua) co gimbal.enabled truthy."""
+    try:
+        return bool(json.load(open(os.path.join(out, "app_cfg.json"))).get("gimbal", {}).get("enabled"))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def gimbal_series(a, T, ev):
+    """load_gimbal_csv(out/gimbal.csv) + kiem do phu thoi gian: > 2% mau truth trong [t_go, t_end] ngoai file -> ValueError."""
+    import numpy as np
+    tg, dg, sg = load_gimbal_csv(os.path.join(a.out, "gimbal.csv"))
+    t_go = ev.get("t_go")
+    if t_go is not None:
+        t_end = ev.get("t_both_stopped") or T[-1]
+        m = (T >= t_go) & (T <= t_end)
+        if m.any():
+            Tm = T[m]
+            k = np.clip(np.searchsorted(tg, Tm), 1, max(len(tg) - 1, 1))     # Tm trong (tg[k-1], tg[k]]
+            lo, hi = tg[np.maximum(k - 1, 0)], tg[k]
+            on_row = (np.abs(Tm - lo) <= 1e-6) | (np.abs(Tm - hi) <= 1e-6)
+            covered = (Tm >= tg[0] - 1e-6) & (Tm <= tg[-1] + 1e-6) & (on_row | (hi - lo <= 0.5 + 1e-9))
+            miss = float(np.mean(~covered))
+            if miss > 0.02:
+                raise ValueError("gimbal.csv khong phu %.1f%% mau truth trong [t_go, t_end] (ngoai file [%.2f, %.2f] s hoac lo > 0.5 s)" % (
+                    100 * miss, tg[0], tg[-1]))
+    return tg, dg, sg
+
 
 def cfg_guidance(out, key, fallback_attr):
     """Gia tri guidance.<key> tu app_cfg.json (neu co), khong co thi mac dinh GuidanceConfig trong dtrack.config."""
@@ -393,6 +468,13 @@ def main():
         crit("khoang trong truth toi da <= 0.2 s (trong cua so do)", (max(wg) if wg else float("inf")) <= 0.2,
              "max gap trong cua so = %.3f s" % (max(wg) if wg else float("nan")))
     crit("tan so ghi truth >= 10 Hz", len(T) / max(dur, 1e-6) >= 10.0, "%.1f Hz" % (len(T) / dur))
+    if cfg_gimbal_enabled(a.out):     # khop gat chu dong: gimbal.csv phai doc duoc va phu thoi gian (moi kich ban)
+        try:
+            import numpy as np
+            gimbal_series(a, np.array(T), ev)
+            crit("gimbal.csv doc duoc va phu thoi gian truth", True, "ok")
+        except Exception as exc:
+            crit("gimbal.csv doc duoc va phu thoi gian truth", False, "khong do duoc: %s" % exc)
     # khoang cach that min tren toan chuyen bay
     imin = min(range(len(D)), key=lambda i: D[i])
     lines.append("min d3 toan chuyen bay = %.2f m tai t=%.1f s (t_rel=%.1f)" % (D[imin], T[imin], T[imin] - T[0]))
