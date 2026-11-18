@@ -92,7 +92,7 @@ def test_boresight_body_vector_and_unit(deg, exp):
     assert np.linalg.norm(v) == pytest.approx(1.0, abs=1e-12)
 
 
-# Hinh hoc thuan: KHONG ket, KHONG bao loi voi delta huu han ngoai [10, 90] do (chi elev_to_delta ket).
+# Hinh hoc thuan: KHONG ket, KHONG bao loi voi delta huu han ngoai [10, 110] do (chi elev_to_delta ket).
 @pytest.mark.parametrize("deg", [0, 5, 120, 180, -30])
 def test_boresight_body_not_clamped_outside_limits(deg):
     from dtrack.gimbal import boresight_body
@@ -112,7 +112,7 @@ def test_camera_attitude_not_clamped_outside_limits(delta):
 
 def test_limits_constants():
     from dtrack.gimbal import DELTA_MAX_RAD, DELTA_MIN_RAD
-    assert DELTA_MIN_RAD == pytest.approx(D(10)) and DELTA_MAX_RAD == pytest.approx(D(90))
+    assert DELTA_MIN_RAD == pytest.approx(D(10)) and DELTA_MAX_RAD == pytest.approx(D(110))
 
 
 # ---------------- (2) nam bang, delta=90 -> ngang huong mui ----------------
@@ -166,7 +166,7 @@ def test_closed_loop_grid():
                     q = body_quat(D(th), D(ro), yaw)
                     delta, sat = elev_to_delta(q, D(el_deg))
                     assert sat is True or sat is False
-                    assert math.isfinite(delta) and D(10) - 1e-12 <= delta <= D(90) + 1e-12
+                    assert math.isfinite(delta) and D(10) - 1e-12 <= delta <= D(110) + 1e-12
                     if sat:
                         continue
                     unsat += 1
@@ -197,8 +197,11 @@ def test_hand_value_vertical_body_roll_yaw_independent(roll, yaw):
 
 
 # ---------------- (4) bang tinh tay, khong roll: d = 90 - theta - elev (do) ----------------
+# Vung moi 90-110 (dai moi [10, 110]): treo theta 0, elev -12 -> 90 - 0 + 12 = 102 ;
+# mui ngang len 5 (theta -5), elev -14.5 -> 90 + 5 + 14.5 = 109.5 ; ca hai trong dai, khong ket.
 @pytest.mark.parametrize("th,el,exp", [(30, -12, 72), (60, -12, 42), (78, -12, 24), (89.9, -12, 12.1),
-                                        (90, -12, 12), (0, 30, 60), (-10, 20, 80)])
+                                        (90, -12, 12), (0, 30, 60), (-10, 20, 80),
+                                        (0, -12, 102), (-5, -14.5, 109.5)])
 def test_hand_table_no_roll(th, el, exp):
     from dtrack.gimbal import elev_to_delta
     delta, sat = elev_to_delta(body_quat(D(th)), D(el))
@@ -207,7 +210,8 @@ def test_hand_table_no_roll(th, el, exp):
 
 
 # Dung tai gioi han (khong bi ket that su) -> sat False. Dung bang so voi gioi han, nen can dung dung gia tri.
-@pytest.mark.parametrize("th,el,exp", [(80, 0, 10), (0, 0, 90), (60, -60, 90)])
+# Bien tren 110: theta 0, elev -20 -> 90 + 20 = 110 ; theta 60, elev -80 -> 90 - 60 + 80 = 110.
+@pytest.mark.parametrize("th,el,exp", [(80, 0, 10), (0, -20, 110), (60, -80, 110)])
 def test_exactly_at_limit_is_not_saturated(th, el, exp):
     from dtrack.gimbal import elev_to_delta
     delta, sat = elev_to_delta(body_quat(D(th)), D(el))
@@ -216,8 +220,9 @@ def test_exactly_at_limit_is_not_saturated(th, el, exp):
 
 
 # ---------------- (5) bao hoa ----------------
-# theta < 0 = mui ngang LEN (pitch Euler duong): d = 90 - theta - elev = 90 + |theta| - elev > 90 khi elev <= 0
-@pytest.mark.parametrize("th,el,exp", [(0, -12, 90), (85, 0, 10), (-20, -12, 90), (-5, -5, 90), (89.9, 0, 10)])
+# theta < 0 = mui ngang LEN (pitch Euler duong): d = 90 - theta - elev = 90 + |theta| - elev.
+# Gioi han tren 110: (0, -25) -> 115 ; (-20, -12) -> 122 ; (-5, -25) -> 120 ; deu > 110 -> ket 110.
+@pytest.mark.parametrize("th,el,exp", [(0, -25, 110), (85, 0, 10), (-20, -12, 110), (-5, -25, 110), (89.9, 0, 10)])
 def test_saturation_no_roll(th, el, exp):
     from dtrack.gimbal import elev_to_delta
     delta, sat = elev_to_delta(body_quat(D(th)), D(el))
@@ -232,9 +237,10 @@ def test_custom_limits_respected():
 
 
 # ---------------- (6) roll lon, ngoai tam ----------------
-@pytest.mark.parametrize("el,exp", [(-40, 90), (40, 10)])
+@pytest.mark.parametrize("el,exp", [(-40, 110), (40, 10)])
 def test_unreachable_with_large_roll_returns_nearest_limit(el, exp):
-    # theta=0, roll=80: el(delta) = asin(cos80 * cos delta) trong [0, 9.8 do] voi delta in [10,90]
+    # theta=0, roll=80: el(delta) = asin(cos80 * cos delta) trong [-3.4, 9.8 do] voi delta in [10,110]
+    # (giam dan theo delta) -> elev -40 gan nhat o 110, elev 40 gan nhat o 10
     from dtrack.gimbal import elev_to_delta
     delta, sat = elev_to_delta(body_quat(0.0, D(80), D(20)), D(el))
     assert sat is True
@@ -277,7 +283,7 @@ def _sin_elev_achieved(theta, roll, yaw, d):
 
 
 def _unreachable_grid():
-    sweep = np.linspace(D(10), D(90), 4001)
+    sweep = np.linspace(D(10), D(110), 4001)
     out = []
     for th in (-80, -60, -40, -20):
         for ro in (20, 45, 50, 70):
@@ -295,7 +301,7 @@ def test_unreachable_grid_is_not_empty_and_has_interior_optimum_cases():
     # tranh test rong: luoi co du ca khong voi toi, trong do co ca phi = atan2(-sin th, cos th cos roll) trong dai
     assert len(_UNREACH) >= 8
     interior = [c for c in _UNREACH
-                if D(10) < math.atan2(-math.sin(D(c[0])), math.cos(D(c[0])) * math.cos(D(c[1]))) < D(90)]
+                if D(10) < math.atan2(-math.sin(D(c[0])), math.cos(D(c[0])) * math.cos(D(c[1]))) < D(110)]
     assert len(interior) >= 4
 
 
@@ -314,8 +320,8 @@ def test_unreachable_elev_error_is_minimal_over_whole_range(th, ro, el):
     yaw = D(37)
     delta, sat = elev_to_delta(body_quat(D(th), D(ro), yaw), D(el))
     assert sat is True
-    assert D(10) - 1e-12 <= delta <= D(90) + 1e-12
+    assert D(10) - 1e-12 <= delta <= D(110) + 1e-12
     s = math.sin(D(el))
     err = abs(_sin_elev_achieved(th, ro, yaw, delta) - s)
-    best = min(abs(_sin_elev_achieved(th, ro, yaw, d) - s) for d in np.linspace(D(10), D(90), 4001))
+    best = min(abs(_sin_elev_achieved(th, ro, yaw, d) - s) for d in np.linspace(D(10), D(110), 4001))
     assert err <= best + 1e-6, (math.degrees(delta), err, best)

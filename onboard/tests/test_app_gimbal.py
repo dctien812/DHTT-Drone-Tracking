@@ -437,7 +437,7 @@ def _run_track(tmp_path, monkeypatch, q_body, hold_offset_deg, delta_init_deg, p
 
 
 # than pitch -30 (theta 30), muc tieu 10 do duoi ngang, hold_offset 2 -> aim -8 -> delta = 90 - 30 + 8 = 68 do (tinh tay).
-# Neu bo dieu khien nhan q CAMERA (pitch -30 + 90 - delta_act ~ -5) thi can delta ~93 -> ket 90, sat: khac 68.
+# Neu bo dieu khien nhan q CAMERA (pitch -30 + 90 - delta_act ~ -5) thi can delta ~93 (trong dai [10,110]): khac 68.
 def _pitched_track(tmp_path, monkeypatch):
     return _run_track(tmp_path, monkeypatch, Q_PITCH_M30, hold_offset_deg=2.0, delta_init_deg=65.0, port_init_deg=60.0)
 
@@ -455,7 +455,7 @@ def test_track_rows_log_elev_los_aim_and_delta_from_body_q(tmp_path, monkeypatch
 
 def test_track_controller_uses_body_q_with_port_stuck_at_60(tmp_path, monkeypatch):
     # cong KHONG theo lenh, giu delta 60: q camera = pitch thuan (-30 + 30) = 0 do. Bo dieu khien dung q than:
-    # delta = 90 - 30 + 8 = 68, sat 0. Neu dung q camera: can 90 - 0 + 8 = 98 -> ket 90, sat 1 (tinh tay).
+    # delta = 90 - 30 + 8 = 68, sat 0. Neu dung q camera: can 90 - 0 + 8 = 98 (trong dai [10,110]): khac 68 (tinh tay).
     _, rows, _, _ = _run_track(tmp_path, monkeypatch, Q_PITCH_M30, hold_offset_deg=2.0, delta_init_deg=65.0,
                                port_init_deg=60.0, follow=False)
     trk = [r for r in rows if r["mode"] == "track"]
@@ -490,14 +490,15 @@ def test_delta_act_is_measured_at_cycle_start_before_command(tmp_path, monkeypat
     assert float(rows[1]["delta_act_deg"]) == pytest.approx(65.0, abs=1e-3)     # chu ky 0: lenh init 65
 
 
-def test_track_level_body_target_below_saturates_at_90(tmp_path, monkeypatch):
-    # theta 0, muc tieu -10 do: can delta = 100 do > 90 -> ket 90, sat (thiet ke: Quyet dinh chung)
+def test_track_level_body_target_below_tracks_at_100_unsaturated(tmp_path, monkeypatch):
+    # theta 0, muc tieu -10 do: can delta = 90 - 0 + 10 = 100 do, trong dai mac dinh [10, 110] -> khong ket, sat 0
+    # (truoc khi doi dai: ket 90, sat 1)
     _, rows, _, _ = _run_track(tmp_path, monkeypatch, Q_LEVEL, hold_offset_deg=0.0, delta_init_deg=90.0,
                                port_init_deg=90.0)
     trk = [r for r in rows if r["mode"] == "track"]
     assert len(trk) >= 5
-    assert trk[-1]["sat"] in ("1", "True", "true")
-    assert float(trk[-1]["delta_cmd_deg"]) == pytest.approx(90.0, abs=1e-3)
+    assert trk[-1]["sat"] in ("0", "False", "false")
+    assert float(trk[-1]["delta_cmd_deg"]) == pytest.approx(100.0, abs=0.5)
 
 
 # ------------------------------------------- nhanh khop cu (camera.gimbal_enabled, GimbalModel) giu nguyen

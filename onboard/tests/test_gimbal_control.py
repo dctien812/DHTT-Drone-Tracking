@@ -4,7 +4,8 @@ Quy uoc (nhu test_gimbal_geometry.py): quaternion (w,x,y,z) than FRD -> NED; the
 Khong roll: delta = 90 - theta - elev (do). Ky vong tinh tay, khong goi lai elev_to_delta cua du an.
   (1) theta=30, elev=-12  -> 90-30+12 = 72
   (2) hold_offset=3, elev_los=-12 -> aim=-9 -> 90-30+9 = 69
-  (3) theta=0, elev=-12   -> 102 > 90 -> ket 90, sat=True
+  (3) dai mac dinh [10, 110]: theta=0, elev=-12 -> 102, khong ket ; theta=0, elev=-25 -> 115 > 110 -> ket 110, sat=True ;
+      theta=-5 (mui ngang len), elev=-14.5 -> 90+5+14.5 = 109.5, khong ket
   (5) elev=-5: theta=30 -> 65 ; theta=10 -> 85 (tang 20), aim van -5
   (10) gioi han [20,60]: theta=30, elev=-12 -> 72 -> ket 60 sat ; theta=80, elev=0 -> 10 -> ket 20 sat
 Cach dung: GimbalConfig THAT (dtrack.config, buoc 3) qua kwargs do; TrackState THAT (dtrack.types);
@@ -122,12 +123,29 @@ def test_hold_offset_3deg_adds_to_aim_not_to_los():
 
 
 # ---------------- (3) hanh vi 3: bao hoa ----------------
-def test_hover_theta0_elev_minus12_saturates_at_90():
+def test_hover_theta0_elev_minus25_saturates_at_110():
+    # 90 - 0 + 25 = 115 > 110 -> ket 110
+    ctrl = make_ctrl()
+    c = ctrl.step(0.0, body_quat(0.0), track("TRACK", 0.0, -25.0))
+    assert c.sat is True
+    assert math.degrees(c.delta_cmd_rad) == pytest.approx(110.0, abs=1e-6)
+    assert c.mode == "track"
+
+
+def test_hover_theta0_elev_minus12_gives_102_unsaturated():
+    # 90 - 0 + 12 = 102, trong [10, 110] (truoc day ket 90)
     ctrl = make_ctrl()
     c = ctrl.step(0.0, body_quat(0.0), track("TRACK", 0.0, -12.0))
-    assert c.sat is True
-    assert math.degrees(c.delta_cmd_rad) == pytest.approx(90.0, abs=1e-6)
-    assert c.mode == "track"
+    assert c.mode == "track" and c.sat is False
+    assert math.degrees(c.delta_cmd_rad) == pytest.approx(102.0, abs=1e-6)
+
+
+def test_nose_up5_elev_minus14p5_gives_109p5_unsaturated():
+    # theta = -5 (mui ngang len 5 do): 90 + 5 + 14.5 = 109.5, trong dai
+    ctrl = make_ctrl()
+    c = ctrl.step(0.0, body_quat(D(-5)), track("TRACK", 0.0, -14.5))
+    assert c.mode == "track" and c.sat is False
+    assert math.degrees(c.delta_cmd_rad) == pytest.approx(109.5, abs=1e-6)
 
 
 # ---------------- (4) hanh vi 4: SEARCH chua khoa ----------------
@@ -336,7 +354,7 @@ def test_hold_uses_custom_limits_from_config():
     ctrl = make_ctrl(delta_min_deg=20.0, delta_max_deg=60.0, delta_init_deg=40.0)
     c0 = ctrl.step(0.0, body_quat(D(50)), track("TRACK", 0.0, -12.0))       # 90-50+12 = 52, trong dai
     assert c0.sat is False and math.degrees(c0.delta_cmd_rad) == pytest.approx(52.0, abs=1e-6)
-    hi = ctrl.step(0.1, body_quat(D(10)), track("LOST", 0.1))                # 92 -> ket 60 (mac dinh se ra 90)
+    hi = ctrl.step(0.1, body_quat(D(10)), track("LOST", 0.1))                # 92 -> ket 60 (mac dinh [10,110] se ra 92)
     assert hi.mode == "hold" and hi.sat is True
     assert math.degrees(hi.delta_cmd_rad) == pytest.approx(60.0, abs=1e-6)
     lo = ctrl.step(0.2, body_quat(D(85)), track("LOST", 0.2))                # 17 -> ket 20 (mac dinh se ra 17)

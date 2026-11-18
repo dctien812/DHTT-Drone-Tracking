@@ -14,7 +14,7 @@ import numpy as np
 from .geometry import quat_multiply, quat_normalize, quat_to_matrix
 
 DELTA_MIN_RAD = math.radians(10.0)
-DELTA_MAX_RAD = math.radians(90.0)
+DELTA_MAX_RAD = math.radians(110.0)
 _SAT_EPS = 1e-9
 
 

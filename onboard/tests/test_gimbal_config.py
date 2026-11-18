@@ -41,7 +41,8 @@ def test_gimbal_config_defaults():
     g = AppConfig().gimbal
     assert isinstance(g, C.GimbalConfig)
     assert g.enabled is False and g.frozen is False
-    assert (g.delta_min_deg, g.delta_max_deg, g.delta_init_deg) == (10, 90, 90)
+    # dac ta doi dai khop: gioi han tren 90 -> 110 do; init van 90 (cat canh camera nhin ngang)
+    assert (g.delta_min_deg, g.delta_max_deg, g.delta_init_deg) == (10, 110, 90)
     assert g.hold_offset_deg == 0.0
     assert g.rate_dps == 300 and g.lag_s == 0.05 and g.dead_time_s == 0.02
     assert g.quant_deg == 0.1 and g.slow_factor == 1.0
@@ -126,12 +127,12 @@ def test_validate_accepts_gimbal_enabled_alone():
 @pytest.mark.parametrize("over", [
     {"delta_min_deg": 0.0},                       # 0 < min
     {"delta_min_deg": -5.0},
-    {"delta_min_deg": 90.0},                      # min < max
+    {"delta_min_deg": 110.0, "delta_init_deg": 110.0},   # min < max (max mac dinh 110; init = min de chi vi pham min < max)
     {"delta_min_deg": 95.0, "delta_max_deg": 90.0},
-    {"delta_max_deg": 90.5},                      # max <= 90
-    {"delta_max_deg": 120.0},
+    {"delta_max_deg": 120.5},                     # max <= 120
+    {"delta_max_deg": 135.0},
     {"delta_init_deg": 9.0},                      # min <= init
-    {"delta_init_deg": 91.0},                     # init <= max
+    {"delta_init_deg": 111.0},                    # init <= max (max mac dinh 110)
     {"delta_min_deg": 20.0, "delta_init_deg": 15.0},
     {"delta_max_deg": 60.0, "delta_init_deg": 80.0},
     {"rate_dps": 0.0},                            # rate > 0
@@ -153,6 +154,9 @@ def test_validate_rejects_bad_gimbal_values(over):
     {"delta_min_deg": 10.0, "delta_max_deg": 90.0, "delta_init_deg": 10.0},   # init = min
     {"delta_max_deg": 90.0, "delta_init_deg": 90.0},                          # init = max = 90
     {"delta_min_deg": 0.5, "delta_max_deg": 89.0, "delta_init_deg": 45.0},
+    {"delta_max_deg": 110.0},                                                 # max = 110 (mac dinh moi), init 90
+    {"delta_max_deg": 110.0, "delta_init_deg": 110.0},                        # init = max = 110
+    {"delta_max_deg": 120.0},                                                 # max = 120 (bien tren cua validate)
     {"slow_factor": 3.0}, {"hold_offset_deg": -3.0}, {"hold_offset_deg": 3.0}, {"frozen": True},
 ])
 def test_validate_accepts_boundary_gimbal_values(over):

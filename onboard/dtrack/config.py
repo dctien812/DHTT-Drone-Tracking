@@ -115,7 +115,7 @@ class GimbalConfig:
     """Khop gat chu dong mot truc (buoc 3 thiet ke). Bat bang enabled=True; hai co cung bat thi validate() tu choi."""
     enabled: bool = False
     delta_min_deg: float = 10.0
-    delta_max_deg: float = 90.0
+    delta_max_deg: float = 110.0
     delta_init_deg: float = 90.0
     hold_offset_deg: float = 0.0
     frozen: bool = False
@@ -208,8 +208,8 @@ def validate(cfg: AppConfig) -> None:
     gm = cfg.gimbal
     if cfg.camera.gimbal_enabled and gm.enabled:
         raise ValueError("camera.gimbal_enabled va gimbal.enabled khong duoc cung bat")
-    if not (0 < gm.delta_min_deg < gm.delta_max_deg <= 90):
-        raise ValueError("gimbal: can 0 < delta_min_deg < delta_max_deg <= 90")
+    if not (0 < gm.delta_min_deg < gm.delta_max_deg <= 120):
+        raise ValueError("gimbal: can 0 < delta_min_deg < delta_max_deg <= 120")
     if not (gm.delta_min_deg <= gm.delta_init_deg <= gm.delta_max_deg):
         raise ValueError("gimbal: can delta_min_deg <= delta_init_deg <= delta_max_deg")
     if not (math.isfinite(gm.rate_dps) and gm.rate_dps > 0):
