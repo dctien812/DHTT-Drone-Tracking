@@ -10,7 +10,7 @@ cho toi khi con cach do cao dich --alt - --dive-drop chung quang phanh (vd^2 / (
 Gioi han thuc te cua SITL muc tieu (da do doi chieu): sim/run_sitl.sh nap Tools/autotest/models/freestyle.param co
 WP_SPD_DN=5.0 m/s, WP_ACC_Z=3.0 m/s^2, WP_SPD_UP=5.0 m/s (guided velocity bi cat theo cac tham so nay), nen toc do xuong
 toi da 5 m/s: voi speed 10 m/s thi goc toi da asin(5/10)=30 do. Script tu choi vd > 5 m/s (--max-vd) thay vi de FC am tham cat.
-Chaser (guidance.descend_max_mps = 4 m/s) cung bi gioi han rieng: goc 25 do voi 10 m/s -> vd 4.23 m/s > 4 la ca co chu y.
+Chaser (guidance.descend_max_mps = 4.8 m/s) cung bi gioi han rieng: goc 25 do voi 10 m/s -> vd 4.23 m/s < 4.8.
 """
 import argparse
 import math

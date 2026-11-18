@@ -19,7 +19,8 @@ class GuidanceConfig:
     range_set_m: float = 15.0          # m, khoang cach dat
     range_tau_s: float = 0.0           # s, r_dat = max(range_set_m, tau * |v ban than|); 0 = co dinh
     range_min_m: float = 12.5          # m, nguong lui khan (> 8 m an toan cung: FC tre ~1 s, muc tieu cat canh dung ~8 m/s^2): duoi nguong -> lui theo duong ngam
-    range_min_hyst_m: float = 1.0      # m, thoat che do lui khi r > range_min + hyst
+    range_back_m: float = 12.5         # m, vao che do lui khi r < range_back_m (>= range_min_m; mac dinh = range_min_m: khong lui som)
+    range_min_hyst_m: float = 1.0      # m, thoat che do lui khi r > range_back + hyst
     back_speed_mps: float = 8.0        # m/s, toc do lui (tuong doi so voi muc tieu) khi duoi khoang cach toi thieu
     kp_range: float = 0.3              # 1/s, he so ti le (r - r_dat) -> van toc doc duong ngam
     close_speed_max_mps: float = 3.0   # m/s, gioi han thanh phan P tien lai gan (so voi van toc muc tieu uoc luong)
@@ -37,7 +38,7 @@ class GuidanceConfig:
     # --- gioi han ---
     v_max_mps: float = 30.0            # m/s, toc do ngang toi da cua lenh
     climb_max_mps: float = 4.0         # m/s, toc do len toi da
-    descend_max_mps: float = 4.0       # m/s, toc do xuong toi da
+    descend_max_mps: float = 4.8       # m/s, toc do xuong toi da
     a_max_mps2: float = 3.5            # m/s^2, gia toc ngang toi da cua lenh (muc tieu cat canh tang toc ~4.5 m/s^2; nghieng mui chui duoc bu bang do cao muc tieu mong muon, xem target_elev_ref_deg)
     a_lat_mps2: float = 7.0            # m/s^2, gia toc ngang toi da VUONG GOC huong bay (re): muc tieu 20 m/s re 15 do/s can ~5.2 m/s^2 huong tam
     a_decel_mps2: float = 3.0          # m/s^2, gia toc ngang toi da khi GIAM toc do (cung dung de gioi han toc do tien lai gan theo quang phanh: v_close <= sqrt(2*a_decel*(r - range_min)))
@@ -144,6 +145,10 @@ def validate(cfg: AppConfig) -> None:
     g, s = cfg.guidance, cfg.supervisor
     if g.range_min_m <= 0 or g.range_set_m < g.range_min_m + g.range_min_hyst_m:
         raise ValueError("range_set_m phai >= range_min_m + range_min_hyst_m")
+    if g.range_back_m < g.range_min_m:
+        raise ValueError("range_back_m phai >= range_min_m")
+    if g.range_set_m < g.range_back_m + g.range_min_hyst_m:
+        raise ValueError("range_set_m phai >= range_back_m + range_min_hyst_m")
     for name in ("v_max_mps", "a_max_mps2", "a_max_z_mps2", "jerk_max_mps3", "climb_max_mps", "descend_max_mps"):
         v = getattr(g, name)
         if not (math.isfinite(v) and v > 0):
@@ -178,7 +183,7 @@ def _fill(obj: Any, data: Dict[str, Any], path: str) -> None:
 PROFILES: Dict[str, Dict[str, Any]] = {
     # cau hinh NGHIEM THU B6b: khop gat mot truc on dinh pitch + giu 25 m (muc tieu bay thang 10 m/s roi phanh ~8 m/s^2)
     "accept_gimbal_r25": {
-        "guidance": {"range_set_m": 25.0},
+        "guidance": {"range_set_m": 25.0, "range_back_m": 15.0},
         "camera": {"gimbal_enabled": True},
     },
 }

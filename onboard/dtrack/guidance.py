@@ -8,7 +8,7 @@ Luat (he NED, u = vector don vi duong ngam tu drone bam toi muc tieu, r = khoang
 An toan (uu tien tu tren xuong):
   1. Dau vao khong huu han -> lenh phanh (van toc 0), reason "brake:nan_input".
   2. Khong co muc tieu (SEARCH/LOST) -> phanh (van toc 0, giu vi tri).
-  3. r < range_min_m (co tre hysteresis) -> lui theo duong ngam voi back_speed so voi muc tieu.
+  3. r < range_back_m (co tre hysteresis) -> lui theo duong ngam voi back_speed so voi muc tieu.
   4. range_valid = False hoac COAST -> KHONG tien lai gan: thanh phan doc duong ngam cua lenh
      khong vuot thanh phan "khop" (chi khop van toc ban than + thanh phan ngang theo los_rate,
      giam dan thanh phan tien lai gan), co the lui; ket qua duoc cat tuc thi (khong qua bo gioi han gia toc).
@@ -137,7 +137,7 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
         u_p = max(-cfg.open_speed_max_mps, min(cfg.close_speed_max_mps, cfg.kp_range * e))
         # toc do tien lai gan (so voi muc tieu) khong vuot toc do con phanh kip truoc range_min
         u_p = min(u_p, math.sqrt(2.0 * cfg.a_decel_mps2 * max(r_known - cfg.range_min_m, 0.0)))
-        min_range = r_known < cfg.range_min_m or (in_min_prev and r_known < cfg.range_min_m + cfg.range_min_hyst_m)
+        min_range = r_known < cfg.range_back_m or (in_min_prev and r_known < cfg.range_back_m + cfg.range_min_hyst_m)
         if min_range:
             v_des = v_t - cfg.back_speed_mps * u
             radial_cap = float(v_des @ u)
@@ -158,7 +158,7 @@ def compute_guidance_ex(track: TrackState, own: OwnState, cfg: GuidanceConfig,
         else:
             rad_cmd = rad_own
         if r_known is not None:
-            min_range = r_known < cfg.range_min_m or (in_min_prev and r_known < cfg.range_min_m + cfg.range_min_hyst_m)
+            min_range = r_known < cfg.range_back_m or (in_min_prev and r_known < cfg.range_back_m + cfg.range_min_hyst_m)
             if min_range:
                 rad_cmd = min(rad_cmd, -cfg.back_speed_mps)
                 reasons.append("min_range")
@@ -308,26 +308,12 @@ class Guidance:
 
     def _safe_hold(self, hold: Vec3, own: OwnState, t: float) -> Vec3:
         """Bay tiep trong luc khong thay muc tieu: (1) khong nhanh hon toc do ngang hien tai cua minh (uoc luong
-        van toc muc tieu o xa rat nhieu); (2) neu dang phanh thi tiep tuc phanh (mat muc tieu thuong do chinh
-        quad ngang mui len khi phanh, trong khi muc tieu dang phanh/dung)."""
+        van toc muc tieu o xa rat nhieu). Khong con nhanh 'dang phanh thi phanh tiep' (tu khoa khi COAST)."""
         h = np.array(hold, float)
         so = math.hypot(float(own.vel_ned[0]), float(own.vel_ned[1]))
         sh = math.hypot(float(h[0]), float(h[1]))
         if sh > so and sh > 1e-6:
             h[:2] *= so / sh
-        p, a = self.prev, self.prev_accel
-        if p is not None and a is not None and _finite_vec(p.vel_ned) and _finite_vec(a) and math.isfinite(p.t):
-            vp = np.asarray(p.vel_ned, float)[:2]
-            spp = float(np.linalg.norm(vp))
-            if spp > 1.0:
-                e = vp / spp
-                a_al = float(np.asarray(a, float)[:2] @ e)
-                if a_al < -0.5:
-                    dt = min(max(t - p.t, 1e-3), self.cfg.dt_max_s)
-                    s_new = max(0.0, spp + a_al * dt)
-                    along = float(h[:2] @ e)
-                    if along > s_new:
-                        h[:2] -= (along - s_new) * e
         return (float(h[0]), float(h[1]), float(h[2]))
 
     def _update_mem(self, t: float, info: dict) -> None:

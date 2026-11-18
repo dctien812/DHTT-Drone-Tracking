@@ -33,9 +33,9 @@ DetectionSource.poll() -> [Detection]
 - Vận tốc mục tiêu ước lượng `v_t = v_own + ṙ·u + r·(ω × u)` (chỉ khi `range_valid`).
 - Lệnh `v = v_t + clip(Kp·(r − r_đặt))·u` (P tiến lại gần còn bị cắt ≤ √(2·a_decel·(r − range_min)): quãng phanh), cộng thành phần đứng giữ mục tiêu ở góc nâng mong muốn `target_elev_ref_deg` (tính trong khung đã bù pitch/roll, chỉ giữ yaw; góc mong muốn hạ thấp theo GIA TỐC LỆNH trước khi tăng tốc, không theo tư thế đo; chỉ thành phần vuông góc đường ngắm).
 - `r_đặt = max(range_set_m, range_tau_s·|v|)`. Yaw hướng mũi theo đường ngắm có bù trễ (`yaw_lead_s`) và giới hạn tốc độ đổi.
-- An toàn (thứ tự ưu tiên): dữ liệu không hữu hạn → phanh (v = 0, giữ yaw); không có mục tiêu → phanh; `r < range_min_m` (hysteresis) → lùi theo đường ngắm
+- An toàn (thứ tự ưu tiên): dữ liệu không hữu hạn → phanh (v = 0, giữ yaw); không có mục tiêu → phanh; `r < range_back_m` (hysteresis; `range_back_m` ≥ `range_min_m`) → lùi theo đường ngắm
   (giới hạn gia tốc `a_back`, không bị bỏ qua hoàn toàn); `range_valid = False` hoặc COAST → KHÔNG tiến lại gần: thành phần dọc đường ngắm không vượt vận tốc bản thân hiện tại, giảm dần; giới hạn tốc độ ngang/lên/xuống, gia tốc (dọc hướng bay `a_max`, phanh `a_decel`, vuông góc `a_lat`), jerk; độ cao tối thiểu.
-- COAST / mất hẳn / TRACK nhưng `range_valid = False` (vừa bắt lại, sát mép ảnh): dùng khoảng cách hợp lệ cuối cùng (đóng băng, ṙ = 0) và VẬN TỐC MỤC TIÊU NHỚ ĐƯỢC (EMA lúc TRACK hợp lệ). Bay tiếp theo vận tốc đó, giảm dần sau `blind_grace_s` (`blind_decel_mps2`), không bao giờ nhanh hơn tốc độ ngang hiện tại của mình, và nếu lúc mất mục tiêu đang phanh thì tiếp tục phanh; mũi quay về hướng ngắm cuối. Bộ nhớ cũ hơn `blind_mem_max_s` bị bỏ.
+- COAST / mất hẳn / TRACK nhưng `range_valid = False` (vừa bắt lại, sát mép ảnh): dùng khoảng cách hợp lệ cuối cùng (đóng băng, ṙ = 0) và VẬN TỐC MỤC TIÊU NHỚ ĐƯỢC (EMA lúc TRACK hợp lệ). Bay tiếp theo vận tốc đó, giảm dần sau `blind_grace_s` (`blind_decel_mps2`), không bao giờ nhanh hơn tốc độ ngang hiện tại của mình; mũi quay về hướng ngắm cuối. Bộ nhớ cũ hơn `blind_mem_max_s` bị bỏ.
 
 ### Supervisor
 - Chỉ gửi lệnh khi FC đã arm, mode GUIDED và có tín hiệu engage (bay thật: kênh RC `engage_rc_channel` > `engage_rc_threshold_us`; SITL: `--auto-engage`, bị từ chối nếu nguồn không phải `sim`). Mất một trong ba → IDLE, ngừng gửi ngay. Không bao giờ arm / cất cánh / đổi sang GUIDED.
@@ -69,14 +69,15 @@ Phép đổi lat/lon → mét dùng trắc địa WGS84 theo vĩ độ (`mavlink
 | Tham số | Mặc định | Ý nghĩa |
 |---|---|---|
 | `guidance.range_set_m` / `range_tau_s` | 15 m / 0 | khoảng cách đặt; `r_đặt = max(range_set_m, tau·|v|)` |
-| `guidance.range_min_m` (+ hyst 1 m) | 12.5 m | ngưỡng lùi khẩn (cao hơn 8 m an toàn vì FC trễ ~1 s) |
+| `guidance.range_min_m` | 12.5 m | ngưỡng an toàn (cao hơn 8 m an toàn vì FC trễ ~1 s) |
+| `guidance.range_back_m` (+ hyst 1 m) | 12.5 m | vào lùi khẩn khi r < ngưỡng, thoát khi r > ngưỡng + hyst; phải ≥ `range_min_m` và `range_set_m` ≥ ngưỡng + hyst (hồ sơ `accept_gimbal_r25` đặt 15 m) |
 | `guidance.back_speed_mps` | 8 | tốc độ lùi so với mục tiêu khi dưới ngưỡng |
 | `guidance.kp_range` | 0.3 1/s | hệ số tỉ lệ sai số khoảng cách |
 | `guidance.close_speed_max_mps` / `open_speed_max_mps` | 3 / 3 | giới hạn thành phần P (tiến / lùi) |
 | `guidance.kp_vert_center` / `vert_center_max_mps` | 0.5 / 2.5 | giữ mục tiêu ở góc nâng mong muốn theo phương đứng |
 | `guidance.target_elev_ref_deg` / `elev_ref_max_deg` | 4 / 8 | góc nâng mong muốn của mục tiêu khi không tăng/giảm tốc / cắt ± (bù trước nghiêng mũi theo gia tốc lệnh) |
 | `guidance.v_max_mps` | 30 | tốc độ ngang tối đa |
-| `guidance.climb_max_mps` / `descend_max_mps` | 4 / 4 | tốc độ lên / xuống |
+| `guidance.climb_max_mps` / `descend_max_mps` | 4 / 4.8 | tốc độ lên / xuống |
 | `guidance.a_max_mps2` / `a_decel_mps2` / `a_lat_mps2` / `a_back_mps2` / `a_max_z_mps2` | 3.5 / 3 / 7 / 12 / 1.5 | gia tốc (dọc tăng tốc, phanh, ngang khi rẽ, khi lùi khẩn, đứng) |
 | `guidance.jerk_max_mps3` / `jerk_back_mps3` | 10 / 80 | tốc độ đổi gia tốc lệnh (thường / khi lùi khẩn) |
 | `guidance.v_t_mem_tau_s` / `blind_grace_s` / `blind_decel_mps2` / `blind_mem_max_s` | 0.5 / 1 / 1 / 8 | bộ nhớ vận tốc mục tiêu, bay tiếp khi mất mục tiêu |

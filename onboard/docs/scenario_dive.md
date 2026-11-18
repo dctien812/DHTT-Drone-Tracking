@@ -30,7 +30,7 @@ Bien: `DIVE_DEG` (> 0 bat ca cam; yeu cau `SCENARIO=none`, tu dat `STRAIGHT=1`),
 - SITL muc tieu nap `models/freestyle.param`: `WP_SPD_DN 5.0`, `WP_ACC_Z 3.0`, `WP_SPD_UP 5.0` (`sim/run_sitl.sh`). Toc do xuong
   lenh bi cat o 5 m/s => voi 10 m/s goc toi da 30 do. `target_dive.py` va `run_closed_loop.sh` tu choi vd > 5 m/s.
   (Chua kiem bang chay SITL: can xem `tgt_vd` trong truth.csv dat dung gia tri lenh.)
-- Chaser: `guidance.descend_max_mps = 4`, `min_alt_m = 10`: ca 25 do (xuong 4.23 > 4) chu y bat chaser khong theo kip theo phuong dung.
+- Chaser: `guidance.descend_max_mps = 4.8`, `min_alt_m = 10`: ca 25 do xuong 4.23 < 4.8 (truoc day 4.0 nen chaser khong theo kip theo phuong dung).
 - Do cao 30 m cu khong du de cam 40 m: do cao hanh trinh 70 m, ha ve 30 m (chaser con cach san 10 m xa).
 
 ## Tieu chi cham them (analyze_closed_loop.py; cac tieu chi bay deu cu giu nguyen)

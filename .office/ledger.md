@@ -217,3 +217,39 @@
 - Chưa kiểm chứng: camera thật, tốc độ ghi thẻ nhớ, đĩa đầy thật.
 - `run_acceptance.sh` (2 dòng, trưởng phòng sửa): 08 xác nhận đúng.
 - Điều chỉnh cách làm theo ý người dùng: chạy mô phỏng/đo đạc từ nay giao 07; kết quả nghiệm thu giao 08 đối chiếu.
+
+## 2026-11-18 · Nghiệm thu kịch bản cắm xuống (8 lần chạy) · 01 Trưởng phòng chạy · 3 PASS / 5 FAIL
+- PASS: dive15 seed 1; blackout seed 1 (min 9,95 m ở pha phanh cuối, theo tiêu chí cũ 8 m); disengage seed 1.
+- FAIL: dive25 seed 1/2/3 (mục tiêu ra khung ~14,5 s, mất hẳn, d3 tới 134–141 m trong pha cắm, hơn 1 km cuối chuyến); dive15 seed 2 (ra khung 3,04 s, max 53,5 m); dive15 seed 3 (giảm tốc cuối min 11,5 m < 12,5).
+- Bằng chứng: `onboard/simtools/out/_acceptance_20261118_064426.txt`, `_acceptance_20261118_064947.txt`. Trưởng phòng mới đọc dòng tóm tắt, chưa đọc từng result.txt (trừ dive15 seed 1).
+- Nguyên nhân chưa xác định → giao 10 investigator (chỉ đọc, tối đa 2 lần chạy lại). Chưa sửa gì.
+- Điều chỉnh: bước "08 đối chiếu result.txt với tiêu chí" dời sang lượt chạy lại sau khi sửa, vì kết quả hiện tại đã FAIL rõ và 10 sẽ đọc từng thư mục.
+
+## 2026-11-18 · Điều tra FAIL kịch bản cắm xuống · 10 investigator · XONG CÒN NGHI NGỜ (A, B chứng minh; C suy từ log)
+- Cơ chế chung: khớp gật chỉ ổn định, trục camera cố định +15°; mép dưới ảnh ở −2,5°, guidance giữ mục tiêu ở +4° → dự trữ phía dưới 6,5° (~2,8 m ở 25 m). Cả 6 lần cắm mục tiêu đều ra ở mép dưới sau 1,8–2,8 s.
+- A (25°), B (15° seed 2): khi COAST, nhánh "đang phanh thì phanh tiếp" (`onboard/dtrack/guidance.py` `_safe_hold`, ~dòng 309–330) tự khóa, tốc độ ngang giảm 3 m/s² về 0 dù vận tốc mục tiêu nhớ được 8,6 m/s; cộng `descend_max` 4,0 < 4,23 m/s và `a_max_z` 1,5 m/s². Phép thử: phát lại log (lệch 0,13 m/s), harness tối giản, 2 lần chạy lại SITL (tilt 0; tilt 0 + descend 4,8).
+- C (15° seed 3): nhiều khả năng do range_rate sai dấu ~0,75 s làm v_t quá cao, và chế độ lùi chỉ kích ở đúng ngưỡng chấm 12,5 m. Chưa tái hiện.
+- Loại: `_last_r` đóng băng (chỉ ~0,45 m/s), khớp chạm giới hạn, `prev` lệch khi LOST.
+- Tiêu chí không khả thi với cấu hình hiện tại: ra khung ≤ 2 s ở 25°; d3 ≥ 12,5 m trùng ngưỡng phản ứng.
+- Phạm vi: `git status` sạch ngoài sổ ghi; script tạm của 10 nằm ở scratchpad và /tmp của WSL.
+- Trưởng phòng: xác nhận nhánh `_safe_hold` tồn tại và là chủ ý cũ (cho kịch bản mục tiêu phanh gấp). Chưa sửa; trình người dùng 3 quyết định (hướng camera, nhánh phanh khi mất hình, giới hạn hạ và ngưỡng 12,5 m).
+
+## 2026-11-18 · Quyết định của người dùng: duyệt cả ba khuyến nghị sửa kịch bản cắm xuống
+- (1) Khớp gật chủ động hướng theo mục tiêu → 13 architect thiết kế trước. (2) Bỏ nhánh phanh tự khóa khi COAST. (3) `descend_max_mps` 4,0 → 4,8; thêm `range_back_m` 15 m (lùi sớm), giữ `range_min` 12,5 m; giữ tiêu chí ra khung ≤ 2 s.
+- Thứ tự: (2)+(3) trước theo quy trình test trước (07 → 05 → 08), rồi 07 chạy lại ma trận, 08 đối chiếu; (1) sau khi có thiết kế.
+- Đã giao: 07 viết test đỏ `onboard/tests/test_guidance_dive_fixes.py`; 13 thiết kế (chỉ đọc), chạy song song.
+
+## 2026-11-18 · Sửa dẫn đường cho kịch bản cắm (T1 bỏ phanh tự khóa, T2 descend 4,8, T3 range_back_m) · vòng sửa
+- 13 architect: thiết kế khớp gật hướng theo mục tiêu (XONG CÒN NGHI NGỜ: số MG90S chưa tra, hệ thời gian log chưa kiểm). 6 bước; phải đổi `analyze_closed_loop.py` sang đọc góc khớp thật. Câu hỏi cho người dùng: thêm AS5600 nếu servo lệch > 2°. Chưa thực hiện.
+- Lượt 0: 07 viết 15 test đỏ + cập nhật `test_min_range_hysteresis_and_exit` (trưởng phòng tự chạy: 14 failed, 230 passed) → 05 sửa `guidance.py`, `config.py`, câu chữ README/docs (244 passed) → 08: đạt yêu cầu, chất lượng CẦN SỬA.
+- 08 Quan trọng 1: mặc định `range_set_m` 15 = `range_back_m` 15; với nhiễu đo 0,3 m quad vào lùi và r dao động tới 39,8 m (mô phỏng 1 chiều của 08). Lỗi do con số 15 m trưởng phòng chọn. Kèm: `test_guidance.py:366-370` assert nằm trong comment (mã chết từ trước).
+- 08 Quan trọng 2: `test_blind_keeps_braking_when_braking_at_loss` không còn kiểm gì có nghĩa (biên 0,11 m/s).
+- Quyết định trưởng phòng: mặc định `range_back_m` = 12,5; hồ sơ `accept_gimbal_r25` đặt 15; `validate()` ép `range_set_m >= range_back_m + hyst`.
+- Vòng sửa lượt 1: 07 cập nhật test (SendMessage) → 05 → 08 rà lại.
+- Mức Nhỏ ghi sổ: README.md:38 và `simtools/target_dive.py:13` còn câu cũ (đưa vào lượt 1 của 05); `config.py:41` lệch căn lề; 08 không kiểm được red-green và SITL.
+
+## 2026-11-18 · Sửa dẫn đường (T1–T3) · vòng sửa lượt 1 xong · 08 DUYỆT
+- 07 cập nhật test (6 failed/244 passed trên mã cũ, đúng lý do; test nhiễu cho r tới 67 m với 15/15) → 05 sửa (mặc định `range_back_m` 12,5; hồ sơ `accept_gimbal_r25` đặt 15; `validate()` ép `range_set_m >= range_back_m + hyst`; README, comment) → 08 rà lại: hai vấn đề Quan trọng đã hết, không lỗi mới; tự chạy 250 passed; mô phỏng 1 chiều mặc định mới r 14,14–15,91 m.
+- Mức Nhỏ: BOM ở `test_guidance.py:1` và comment cũ dòng 138 (trưởng phòng tự sửa 2 dòng); 08 chưa chạy red-green cho test nhiễu (07 đã chạy).
+- Chưa kiểm chứng: hành vi trên SITL → giao 07 chạy lại ma trận nghiệm thu.
+- 13 architect (nối tiếp): thiết kế tìm lại mục tiêu. Loại "vòng lại"; "leo cao" tắt ở v1 (khớp quét ±50° đã phủ, mô phỏng không có nền); đề xuất 3 pha quét bằng khớp + xoay yaw, giới hạn tốc độ bay mù; thêm xác suất phát hiện theo kích thước vào mô phỏng (hồ sơ realdet). Người dùng đề xuất ý tìm lại; chờ trả lời 2 câu hỏi (trần độ cao, thời gian tới RTL) rồi trình kế hoạch.

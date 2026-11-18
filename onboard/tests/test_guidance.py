@@ -135,8 +135,9 @@ def test_min_range_hysteresis_and_exit():
     g = Guidance(CFG)
     o = own()
     assert "min_range" in g.step(track(r=9.0, t=10.0), o).reason
-    assert "min_range" in g.step(track(r=13.0, t=10.03), o).reason       # trong vung hysteresis (< range_min + hyst = 13.5)
-    assert "min_range" not in g.step(track(r=14.0, t=10.06), o).reason
+    exit_r = CFG.range_back_m + CFG.range_min_hyst_m                      # range_back_m + hyst (mac dinh 12.5 + 1 = 13.5)
+    assert "min_range" in g.step(track(r=exit_r - 0.5, t=10.03), o).reason       # trong vung hysteresis (< range_back + hyst)
+    assert "min_range" not in g.step(track(r=exit_r + 0.5, t=10.06), o).reason
 
 
 def test_min_range_overrides_even_when_target_receding_fast():
@@ -363,10 +364,13 @@ def test_blind_flight_never_closes_beyond_target_velocity():
 
 def test_closing_speed_limited_by_braking_distance():
     cfg = GuidanceConfig(cam_tilt_up_deg=0.0, a_decel_mps2=0.5, range_min_m=10.0, close_speed_max_mps=5.0,
-                         a_max_mps2=50.0, jerk_max_mps3=1e4, kp_range=5.0, range_set_m=12.0)
+                         a_max_mps2=50.0, jerk_max_mps3=1e4, kp_range=5.0, range_set_m=12.0,
+                         range_back_m=10.0)
     o = own(v=(5.0, 0.0, 0.0))
     p = prev_cmd(v=(5.0, 0.0, 0.0))
-    near = compute_guidance(track(r=12.4, rdot=0.0), o, cfg, p)     # kp*e = 2 m/s > sqrt(2*0.5*2.4) = 1.55\n    cap = math.sqrt(2 * 0.5 * 2.4)\n    assert 5.0 + cap - 0.05 < near.vel_ned[0] <= 5.0 + cap + 1e-6          # <= v_t + sqrt(2 a (r - r_min)), va dung cham tran
+    near = compute_guidance(track(r=12.4, rdot=0.0), o, cfg, p)     # kp*e = 2 m/s > sqrt(2*0.5*2.4) = 1.55
+    cap = math.sqrt(2 * 0.5 * 2.4)
+    assert 5.0 + cap - 0.05 < near.vel_ned[0] <= 5.0 + cap + 1e-6          # <= v_t + sqrt(2 a (r - r_min)), va dung cham tran
     far = compute_guidance(track(r=40.0, rdot=0.0), o, cfg, p)
     assert far.vel_ned[0] > 5.0 + 2.0                                        # xa: khong bi cat boi quang phanh
 
@@ -408,13 +412,20 @@ def test_blind_hold_never_faster_than_own_speed():
     assert c.vel_ned[0] <= 4.0 + 1e-6
 
 
-def test_blind_keeps_braking_when_braking_at_loss():
+def test_blind_after_braking_follows_remembered_velocity_with_amax_limited_recovery():
+    # mat muc tieu luc dang phanh (v lenh 6, a -3): khong con phanh tiep; lenh di theo van toc nho duoc (8),
+    # bi chan o toc do hien tai cua minh (7) va muc tang lai bi gioi han boi a_max
     g = Guidance(CFG)
     o, t = _warm(g, v=(8.0, 0.0, 0.0))
     g.prev = prev_cmd(v=(6.0, 0.0, 0.0), dt=1.0 / 30, t=t)
-    g.prev_accel = (-3.0, 0.0, 0.0)                              # dang phanh 3 m/s^2 luc mat muc tieu
-    c = g.step_blind(TrackState(t=t + 1.0 / 30, status=TrackStatus.LOST), own(v=(7.0, 0.0, 0.0)))
-    assert c.vel_ned[0] < 6.0 - 0.05                             # khong tang len theo van toc muc tieu cu (8 m/s)
+    g.prev_accel = (-3.0, 0.0, 0.0)
+    prev_v = 6.0
+    for k in range(1, 31):                                       # 1 s
+        c = g.step_blind(TrackState(t=t + k / 30.0, status=TrackStatus.LOST), own(v=(7.0, 0.0, 0.0)))
+        assert c.vel_ned[0] - prev_v <= CFG.a_max_mps2 / 30.0 + 1e-6
+        assert c.vel_ned[0] <= 7.0 + 1e-6
+        prev_v = c.vel_ned[0]
+    assert c.vel_ned[0] >= 6.5, c.vel_ned[0]                     # da tang lai, khong ket o ~5.8 theo kieu giu phanh
 
 def test_no_accel_compensation_when_camera_self_stabilized():
     u = (1.0, 0.0, 0.0)
