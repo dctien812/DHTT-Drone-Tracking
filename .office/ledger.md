@@ -330,3 +330,8 @@
 - Trưởng phòng đặt `onboard/simtools/out/_STOP`; lô hồ sơ máy bay dừng sau lần 1/6 (dive15 seed 1 PASS, `out/20261118_090641_10ms_s1_none`; ước lượng khoảng cách TB −0,75 m, cần xem lại). Còn 5 lần chưa chạy. `pgrep arducopter` trống.
 - Bước 2: 07 viết 38 test hình học khớp (đỏ đúng lý do, chưa rà); file để ở `onboard/tests/test_gimbal_geometry.py.wip` cho tới khi làm tiếp.
 - Ghi đè `.office/checkpoint.md` (trạng thái, phương án đã chốt, bước tiếp theo). Không còn agent hay mô phỏng nào chạy.
+
+## 2026-11-18 · PHIÊN 5 bắt đầu (văn phòng 9 vị trí) · 01 trưởng phòng
+- Người dùng đặt tên dự án: **Drone Interceptor**. Đã sửa tiêu đề `README.md`; thư mục, repo GitHub, gói `dtrack` giữ tên cũ (đổi các thứ đó là việc khó hoàn tác, chờ người dùng nói riêng). Phạm vi không đổi: chỉ bám và giữ khoảng cách an toàn.
+- Đã xóa `onboard/simtools/out/_STOP`; `pgrep -x arducopter` trống (exit 1); `git status` sạch, HEAD `137f5fb`.
+- Kế hoạch đã duyệt còn hiệu lực. Giao song song: 07 chạy nốt 5 lần của lô `accept_plane_r25`; 08 rà 38 test hình học khớp ở file `.wip` (chỉ đọc, không chạy pytest khi lô đang chạy). Mã `dtrack/gimbal.py` chỉ giao 05 sau khi lô xong.
