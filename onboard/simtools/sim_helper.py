@@ -145,6 +145,8 @@ def main():
     ap.add_argument("--event-at", type=float, default=40.0, help="s sau t_ws cho kich ban mat hinh / disengage")
     ap.add_argument("--blackout-s", type=float, default=3.0)
     ap.add_argument("--straight", action="store_true", help="muc tieu bay thang (chi ghi vao events.json de bo cham biet)")
+    ap.add_argument("--dive-deg", type=float, default=0.0, help="> 0: sau cua so do cho muc tieu cam xuong goc nay (ghi file dive)")
+    ap.add_argument("--dive-drop", type=float, default=40.0, help="do cao muc tieu ha xuong (m), chi de ghi events.json va tinh thoi gian giu")
     ap.add_argument("--chaser-ctl", default="tcp:127.0.0.1:5772")
     ap.add_argument("--chaser-unblock", default="127.0.0.1:5770")
     ap.add_argument("--target-truth", default="tcp:127.0.0.1:5763")
@@ -153,7 +155,13 @@ def main():
     f_go, f_stop = os.path.join(out, "go"), os.path.join(out, "stop")
     f_ready, f_appup = os.path.join(out, "ready"), os.path.join(out, "app_up")
     f_appstop, f_black = os.path.join(out, "app_stop"), os.path.join(out, "blackout")
+    f_dive = os.path.join(out, "dive")
     ev = {"scenario": a.scenario, "speed": a.speed, "straight": bool(a.straight)}
+    if a.dive_deg > 0:
+        ev["dive_deg"], ev["dive_drop_m"] = a.dive_deg, a.dive_drop
+        # thoi gian cam du (drop / vd) + 15 s bay bang truoc khi giam toc cuoi
+        dive_hold = a.dive_drop / max(a.speed * math.sin(math.radians(a.dive_deg)), 0.1) + 15.0
+    t_dive = None
 
     # SITL chaser doi mot ket noi tren SERIAL0 moi chay: mo roi dong (app se dung cong nay sau)
     host, port = a.chaser_unblock.split(":")
@@ -296,7 +304,15 @@ def main():
             if a.scenario == "disengage" and t_event is not None and now - t_event >= 10.0:
                 break
             if a.scenario != "disengage" and now - t_ws >= a.window + 5.0:
-                break
+                if a.dive_deg <= 0:
+                    break
+                if t_dive is None:          # ca cam xuong: ra lenh cam, giu dive_hold s roi moi dung
+                    t_dive = now
+                    open(f_dive, "w").close()
+                    ev["t_dive_cmd"] = now
+                    log("lenh cam xuong %.0f do (ha %.0f m, giu %.0f s)" % (a.dive_deg, a.dive_drop, dive_hold))
+                elif now - t_dive >= dive_hold:
+                    break
         if t_ws is None and now - t_go > a.max_wait:
             log("bo cuoc: khong vao cua so do")
             ev["aborted"] = "no_window"

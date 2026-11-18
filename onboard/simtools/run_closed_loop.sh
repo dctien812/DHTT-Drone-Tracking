@@ -7,6 +7,7 @@
 #   RANGE (15; khoang cach dat, truyen cho helper, bo cham VA app qua file cau hinh tam neu CONFIG khong dat), CONFIG (file TOML/JSON cua app, tuy chon), MAX_WALL (giay that, 900),
 #   PROFILE (ten ho so cau hinh trong dtrack/config.py PROFILES, vd accept_gimbal_r25; ghi de RANGE/CONFIG),
 #   TARGET_PY (script muc tieu, mac dinh sim/target.py; ca phanh mem: simtools/target_softbrake.py voi TARGET_DECEL m/s^2),
+#   DIVE_DEG (>0: ca cam xuong, vd 15 hoac 25 do; xem docs/scenario_dive.md), DIVE_DROP (m ha xuong, 40), ALT (do cao hanh trinh m, 70 khi DIVE_DEG>0),
 #   OUT_ROOT (mac dinh onboard/simtools/out).
 # Chi kill cac PID do chinh script nay tao (khong pkill). Khong goi sim/run_chase.sh.
 # Exit code = exit code cua analyze_closed_loop.py (0 PASS, 1 FAIL); app thoat khac 0 -> FAIL.
@@ -27,9 +28,22 @@ if [ -n "$PROFILE" ]; then
 fi
 # bo CR/LF dinh vao tham so (lenh goi tu Windows co the dinh CRLF) de ten thu muc ket qua khong co '\r'
 STRAIGHT="${STRAIGHT:-0}"
-for _v in SPEED SEED SCENARIO SPEEDUP RANGE MAX_WALL STRAIGHT; do
+DIVE_DEG="${DIVE_DEG:-0}"; DIVE_DROP="${DIVE_DROP:-40}"; ALT="${ALT:-}"
+for _v in SPEED SEED SCENARIO SPEEDUP RANGE MAX_WALL STRAIGHT DIVE_DEG DIVE_DROP ALT; do
   printf -v "$_v" '%s' "$(printf '%s' "${!_v}" | tr -d '\r\n')"
 done
+# DIVE_DEG>0: ca CAM XUONG (muc tieu bay thang roi dot ngot cam goc DIVE_DEG, ha DIVE_DROP m, cuoi chuyen giam toc nhe);
+# can SCENARIO=none, tu dat STRAIGHT=1, ALT mac dinh 70 (do cao hanh trinh m), TARGET_PY=target_dive.py, TARGET_DECEL mac dinh 1.5
+DIVE=0
+if [ "$DIVE_DEG" != "0" ]; then
+  DIVE=1
+  [ "$SCENARIO" = "none" ] || { echo "DIVE_DEG chi di voi SCENARIO=none" >&2; exit 2; }
+  # tran toc do xuong cua SITL muc tieu = WP_SPD_DN 5 m/s (freestyle.param): kiem som, khong de target_dive tu choi sau khi SITL da len
+  awk -v s="$SPEED" -v d="$DIVE_DEG" 'BEGIN{exit !(d>0 && d<90 && s*sin(d*3.14159265/180)<=5.0)}' \
+    || { echo "DIVE_DEG=$DIVE_DEG voi $SPEED m/s cho toc do xuong > 5 m/s (WP_SPD_DN cua SITL muc tieu) hoac goc khong hop le" >&2; exit 2; }
+  STRAIGHT=1; ALT="${ALT:-70}"
+  export TARGET_DECEL="${TARGET_DECEL:-1.5}"
+fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ONBOARD="$(cd "$HERE/.." && pwd)"
 SIM="$(cd "$ONBOARD/../sim" && pwd)"
@@ -68,13 +82,21 @@ PIDS+=("$!")
 PIDS+=("$!")
 TARGS=()
 [ "$STRAIGHT" = "1" ] && TARGS=(--first-turn 1000000)
+[ -n "$ALT" ] && TARGS+=(--alt "$ALT")
+HARGS=()
+[ -n "$ALT" ] && HARGS+=(--alt "$ALT")
+if [ "$DIVE" = "1" ]; then
+  TARGS+=(--dive-file "$OUT/dive" --dive-deg "$DIVE_DEG" --dive-drop "$DIVE_DROP")
+  HARGS+=(--dive-deg "$DIVE_DEG" --dive-drop "$DIVE_DROP")
+  TARGET_PY="${TARGET_PY:-$HERE/target_dive.py}"
+fi
 TARGET_PY="${TARGET_PY:-$SIM/target.py}"      # TARGET_PY=$HERE/target_softbrake.py (+ TARGET_DECEL) cho ca phanh mem
 (cd "$SIM" && exec "$PY" "$TARGET_PY" --speed "$SPEED" "${TARGS[@]}" --go-file "$OUT/go" --stop-file "$OUT/stop") \
   > "$OUT/target.log" 2>&1 &
 PIDS+=("$!")
 
 (cd "$ONBOARD" && exec timeout "$MAX_WALL" "$PY" "$HERE/sim_helper.py" --out "$OUT" --speed "$SPEED" \
-  --scenario "$SCENARIO" --range "$RANGE" $([ "$STRAIGHT" = "1" ] && echo --straight)) > "$OUT/helper.log" 2>&1 &
+  --scenario "$SCENARIO" --range "$RANGE" "${HARGS[@]}" $([ "$STRAIGHT" = "1" ] && echo --straight)) > "$OUT/helper.log" 2>&1 &
 HELPER=$!
 PIDS+=("$HELPER")
 

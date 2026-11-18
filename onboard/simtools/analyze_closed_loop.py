@@ -10,6 +10,13 @@ Tieu chi (kich ban none / blackout):
   - khoang trong du lieu truth toi da <= 0.2 s CHI trong cua so do (toan chuyen chi in tham khao), tan so ghi >= 10 Hz
   - app thoat 0 (app.rc)
 Kich ban disengage: do do tre tu lenh doi mode toi luc app ngung gui lenh (<= 0.5 s); khong cham sai so.
+Ca CAM XUONG (events.json co t_dive_cmd; xem docs/scenario_dive.md) cham THEM:
+  - muc tieu thuc su ha >= 0.8 * dive_drop_m (SITL muc tieu khong am tham cat toc do xuong)
+  - pha cam (t_dive .. het cam + --dive-after s): d3 min >= range_min (config, 12.5 m), d3 max <= --dmax (40 m) tinh tu
+    luc cam toi luc target stop; muc tieu ra khoi khung tong <= --out-max s (2 s)
+  - do cao chaser >= san an toan (config min_alt_m - 1 m) tu luc cam toi het chuyen
+  - pha giam toc cuoi (t_stop_target .. dung): d3 min >= range_min, d3 max <= --dmax, ra khoi khung <= --out-max s
+Ca khong cam (target.py / target_softbrake.py): pha phanh cuoi chi IN cac so tren (khong cham) tru khi co --score-final.
 """
 import argparse
 import csv
@@ -38,7 +45,36 @@ def heading(vn, ve):
 def angdiff(a, b):
     return (a - b + 180.0) % 360.0 - 180.0
 
-def b4_metrics(a, truth, app, ev, scenario):
+
+NUM_COLS = ["t", "tgt_n", "tgt_e", "tgt_alt", "tgt_vn", "tgt_ve", "tgt_vd", "ch_n", "ch_e", "ch_alt",
+            "ch_roll", "ch_pitch", "ch_yaw", "d3"]
+
+
+def drop_bad_rows(truth):
+    """Bo dong truth.csv thieu/khong doc duoc gia tri so (fl -> NaN lam sai min/max/trung vi). Tra (dong tot, so dong bo)."""
+    if not truth:
+        return truth, 0
+    cols = [c for c in NUM_COLS if c in truth[0]]
+    good = [r for r in truth if all(math.isfinite(fl(r, c)) for c in cols)]
+    return good, len(truth) - len(good)
+
+
+def dive_times(truth, ev):
+    """(t_dive, t_dive_end) cua ca cam xuong; t_dive_end = lan dau sau dinh toc do xuong ma tgt_vd < 0.5 m/s (None neu khong thay)."""
+    td = ev.get("t_dive_cmd")
+    if td is None:
+        return None, None
+    ts = ev.get("t_stop_target")
+    rows = [(fl(r, "t"), fl(r, "tgt_vd")) for r in truth if fl(r, "t") >= td and (ts is None or fl(r, "t") <= ts)]
+    if not rows:
+        return td, None
+    k = max(range(len(rows)), key=lambda i: rows[i][1])
+    for t, vd in rows[k:]:
+        if vd < 0.5:
+            return td, t
+    return td, None
+
+def b4_metrics(a, truth, app, ev, scenario, res_out=None):
     """Do dac B4 (khong anh huong PASS/FAIL): hinh hoc camera tu truth + app_cfg.json (fx, tilt, khop gat).
     In cac dong 'B4 ...' va mot dong 'B4JSON {...}'."""
     import statistics
@@ -88,7 +124,13 @@ def b4_metrics(a, truth, app, ev, scenario):
         return ["B4 thieu t_go/t_stop_target: bo qua"]
     i90 = np.where((T >= t_go) & (spd >= 0.9 * a.speed))[0]
     t90 = T[i90[0]] if len(i90) else t_stop
-    phases = {"tang_toc": (t_go, t90), "bam_on_dinh": (t90, t_stop), "phanh_cuoi": (t_stop, t_end)}
+    t_dive, t_dive_end = dive_times(truth, ev)
+    if t_dive is not None:     # ca cam xuong: tach pha cam (+ dive_after s sau cam), bay bang, giam toc cuoi
+        t_cut = min((t_dive_end if t_dive_end is not None else t_stop) + a.dive_after, t_stop)
+        phases = {"tang_toc": (t_go, t90), "bam_on_dinh": (t90, t_dive), "cam_xuong": (t_dive, t_cut),
+                  "bay_bang": (t_cut, t_stop), "giam_toc_cuoi": (t_stop, t_end)}
+    else:
+        phases = {"tang_toc": (t_go, t90), "bam_on_dinh": (t90, t_stop), "phanh_cuoi": (t_stop, t_end)}
     res = {"fx": fx, "tilt": tilt, "gimbal": bool(gm), "range": a.rng, "speed": a.speed, "scenario": scenario}
     lines = ["B4 camera: fx=%.0f px (FOV ngang %.0f, doc %.0f do), tilt=%.0f, khop gat=%s" % (
         fx, 2 * math.degrees(math.atan(W / 2 / fx)), 2 * math.degrees(math.atan(H / 2 / fx)), tilt, "co" if gm else "khong")]
@@ -101,13 +143,13 @@ def b4_metrics(a, truth, app, ev, scenario):
         trans = int(np.sum(oo[1:] & ~oo[:-1])) + int(oo[0])
         dts = np.diff(T[m], append=T[m][-1])
         out_t = float(np.sum(dts[oo]))
-        res[name] = {"dur": float(tb - ta), "min_d3": float(D[j]), "min_t_rel": float(T[j] - T[0]), "out_n": trans,
+        res[name] = {"dur": float(tb - ta), "min_d3": float(D[j]), "max_d3": float(D[m].max()), "min_t_rel": float(T[j] - T[0]), "out_n": trans,
                      "out_s": out_t, "ang_min": float(ang[m].min()), "ang_med": float(np.median(ang[m])),
                      "ang_max": float(ang[m].max())}
         r = res[name]
-        lines.append("B4 pha %-11s %5.1fs: min d3 %.2f m (t_rel %.1f) ; ra khoi khung %d lan / %.2f s ; "
+        lines.append("B4 pha %-13s %5.1fs: min d3 %.2f m (t_rel %.1f) max d3 %.2f m ; ra khoi khung %d lan / %.2f s ; "
                      "goc(truc day than, huong nhin) min/trung vi/max = %.0f/%.0f/%.0f do" % (
-                         name, r["dur"], r["min_d3"], r["min_t_rel"], r["out_n"], r["out_s"], r["ang_min"], r["ang_med"], r["ang_max"]))
+                         name, r["dur"], r["min_d3"], r["min_t_rel"], r["max_d3"], r["out_n"], r["out_s"], r["ang_min"], r["ang_med"], r["ang_max"]))
     m = (T >= t_go) & (T <= t_end)
     oo = out_of[m]
     dts = np.diff(T[m], append=T[m][-1])
@@ -139,7 +181,89 @@ def b4_metrics(a, truth, app, ev, scenario):
             lines.append("B4 sai so uoc luong khoang cach khi range_valid (%d mau): TB %.2f, |TB| %.2f, RMS %.2f m" % (
                 len(errs), res["range_err"]["mean"], res["range_err"]["abs_mean"], res["range_err"]["rms"]))
     lines.append("B4JSON " + json.dumps(res))
+    if res_out is not None:
+        res_out.update(res)
     return lines
+
+def cfg_guidance(out, key, fallback_attr):
+    """Gia tri guidance.<key> tu app_cfg.json (neu co), khong co thi mac dinh GuidanceConfig trong dtrack.config."""
+    try:
+        v = json.load(open(os.path.join(out, "app_cfg.json"))).get("guidance", {}).get(key)
+        if v is not None:
+            return float(v)
+    except (OSError, ValueError):
+        pass
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    from dtrack.config import GuidanceConfig
+    return float(getattr(GuidanceConfig(), fallback_attr))
+
+
+def dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines):
+    """Cham pha cam xuong (neu co t_dive_cmd) va pha giam toc/phanh cuoi. Xem docstring dau file."""
+    t_dive, t_dive_end = dive_times(truth, ev)
+    t_stop, t_end = ev.get("t_stop_target"), ev.get("t_both_stopped") or T[-1]
+    if t_stop is None:
+        return
+    rmin = a.range_min if a.range_min is not None else cfg_guidance(a.out, "range_min_m", "range_min_m")
+    floor = a.alt_floor if a.alt_floor is not None else cfg_guidance(a.out, "min_alt_m", "min_alt_m") - 1.0
+    if t_dive is not None:
+        talt = [(T[i], fl(truth[i], "tgt_alt"), fl(truth[i], "tgt_vd")) for i in range(len(T)) if t_dive <= T[i] <= t_stop]
+        if talt:
+            drop = talt[0][1] - min(x[1] for x in talt)
+            vdp = max(x[2] for x in talt)
+            lines.append("cu cam: lenh luc t=%.1f, het cam t=%s ; muc tieu ha %.1f m, toc do xuong max %.2f m/s (goc ~ %.0f do voi %.0f m/s)" % (
+                t_dive, ("%.1f" % t_dive_end) if t_dive_end is not None else "?", drop, vdp,
+                math.degrees(math.asin(min(1.0, vdp / max(a.speed, 1e-6)))), a.speed))
+            need = 0.8 * float(ev.get("dive_drop_m", 25.0))
+            crit("muc tieu thuc su cam xuong (ha >= %.0f m)" % need, drop >= need, "ha %.1f m" % drop)
+        else:
+            crit("muc tieu thuc su cam xuong", False, "khong co dong truth giua lenh cam va stop")
+        seg = [i for i in range(len(T)) if t_dive <= T[i] <= t_stop]
+        if seg:
+            dmin, dmax = min(D[i] for i in seg), max(D[i] for i in seg)
+            lines.append("d3 tu luc cam toi stop: min %.2f max %.2f m" % (dmin, dmax))
+            crit("pha cam: d3 min >= range_min %.1f m" % rmin, dmin >= rmin, "min = %.2f m" % dmin)
+            crit("trong va sau cu cam: d3 max <= %.0f m" % a.dmax, dmax <= a.dmax, "max = %.2f m" % dmax)
+        cam = b4res.get("cam_xuong")
+        if cam:
+            crit("muc tieu ra khoi khung trong pha cam <= %.1f s" % a.out_max, cam["out_s"] <= a.out_max,
+                 "%.2f s (%d lan)" % (cam["out_s"], cam["out_n"]))
+        else:
+            crit("muc tieu ra khoi khung trong pha cam <= %.1f s" % a.out_max, False, "khong do duoc (B4 loi hoac pha rong)")
+        seg = [i for i in range(len(T)) if t_dive <= T[i] <= t_end]
+        if seg:
+            amin = min(fl(truth[i], "ch_alt") for i in seg)
+            crit("do cao chaser >= san %.1f m (tu luc cam toi het chuyen)" % floor, amin >= floor, "min = %.2f m" % amin)
+    # pha giam toc / phanh cuoi
+    name = "giam_toc_cuoi" if t_dive is not None else "phanh_cuoi"
+    fin = b4res.get(name)
+    scored = t_dive is not None or a.score_final
+    tag = "" if scored else " [tham khao, khong cham; --score-final de cham]"
+    seg = [i for i in range(len(T)) if t_stop <= T[i] <= t_end]
+    if not seg:
+        return
+    dmin, dmax = min(D[i] for i in seg), max(D[i] for i in seg)
+    vs = [math.hypot(fl(truth[i], "tgt_vn"), fl(truth[i], "tgt_ve")) for i in seg]
+    dec, j = float("nan"), 0
+    for k in range(len(seg)):          # giam toc max do tren khoang >= 1 s (tranh nhieu mau)
+        while j < len(seg) - 1 and T[seg[j]] - T[seg[k]] < 1.0:
+            j += 1
+        if T[seg[j]] - T[seg[k]] >= 1.0:
+            d_ = (vs[k] - vs[j]) / (T[seg[j]] - T[seg[k]])
+            dec = d_ if dec != dec else max(dec, d_)
+    lines.append("pha giam toc cuoi (stop..dung)%s: d3 min %.2f max %.2f m ; ra khoi khung %s ; giam toc ngang muc tieu max %.1f m/s^2 (TB 1 s)" % (
+        tag, dmin, dmax, ("%.2f s" % fin["out_s"]) if fin else "?", dec))
+
+    def chk(label, ok, detail):
+        if scored:
+            crit(label, ok, detail)
+        else:
+            lines.append("[%s tham khao] %s: %s" % ("dat" if ok else "KHONG dat", label, detail))
+    chk("giam toc cuoi: d3 min >= range_min %.1f m" % rmin, dmin >= rmin, "min = %.2f m" % dmin)
+    chk("giam toc cuoi: d3 max <= %.0f m" % a.dmax, dmax <= a.dmax, "max = %.2f m" % dmax)
+    chk("giam toc cuoi: ra khoi khung <= %.1f s" % a.out_max, bool(fin) and fin["out_s"] <= a.out_max,
+        ("%.2f s" % fin["out_s"]) if fin else "khong do duoc")
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -148,9 +272,16 @@ def main():
     ap.add_argument("--range", type=float, default=15.0, dest="rng")
     ap.add_argument("--tol", type=float, default=3.0)
     ap.add_argument("--window", type=float, default=120.0)
+    ap.add_argument("--range-min", type=float, default=None, help="m; mac dinh guidance.range_min_m cua app_cfg.json, khong co thi cua dtrack.config")
+    ap.add_argument("--alt-floor", type=float, default=None, help="m; san do cao chaser, mac dinh guidance.min_alt_m - 1")
+    ap.add_argument("--dmax", type=float, default=40.0, help="m; d3 lon nhat cho phep trong/sau cu cam va pha giam toc cuoi")
+    ap.add_argument("--out-max", type=float, default=2.0, help="s; tong thoi gian muc tieu ra khoi khung cho phep trong pha cam / giam toc cuoi")
+    ap.add_argument("--dive-after", type=float, default=5.0, help="s; pha cam keo dai them chung nay sau khi muc tieu het ha")
+    ap.add_argument("--score-final", action="store_true", help="cham pha phanh cuoi cua ca KHONG cam xuong (mac dinh chi in)")
     a = ap.parse_args()
 
     truth = read_csv(os.path.join(a.out, "truth.csv"))
+    truth, n_bad = drop_bad_rows(truth)
     ev = json.load(open(os.path.join(a.out, "events.json"))) if os.path.exists(os.path.join(a.out, "events.json")) else {}
     app = read_csv(os.path.join(a.out, "app_log.csv")) if os.path.exists(os.path.join(a.out, "app_log.csv")) else []
     app_rc = int(open(os.path.join(a.out, "app.rc")).read().strip()) if os.path.exists(os.path.join(a.out, "app.rc")) else None
@@ -171,6 +302,8 @@ def main():
     dur = T[-1] - T[0]
     gaps = [T[i + 1] - T[i] for i in range(len(T) - 1)]
     lines.append("scenario=%s speed=%.0f  truth rows=%d  duration=%.1f s" % (scenario, a.speed, len(T), dur))
+    if n_bad:
+        lines.append("CANH BAO: bo %d dong truth.csv thieu/hong gia tri so (khong dua vao min/max/khoang trong)" % n_bad)
     lines.append("khoang trong truth TOAN chuyen (tham khao, khong chan): max %.3f s" % max(gaps))
     t_ws0 = ev.get("t_ws")
     if scenario == "disengage" or t_ws0 is None:
@@ -271,9 +404,6 @@ def main():
             crit("ty le thoi gian o TRACK >= 90%", ntrack / len(aw) >= 0.9, "%.1f%%" % (100.0 * ntrack / len(aw)))
             ld = [float(r["loop_dt"]) for r in aw]
             lines.append("chu ky app: TB %.1f ms, max %.1f ms" % (1000 * sum(ld) / len(ld), 1000 * max(ld)))
-            mn = [float(r["range"]) for r in aw if r["range"] not in ("", None)]
-            # sai so uoc luong khoang cach cua tracker so voi that (chi de tham khao)
-            tt = [(float(r["t"]), r) for r in truth if False]
         else:
             crit("ty le thoi gian o TRACK >= 90%", False, "khong co dong app trong cua so")
     else:
@@ -288,10 +418,12 @@ def main():
         lines.append("trang thai supervisor trong doan do: %s" % dict(Counter(r["state"] for r in aseg)))
         rtl = sum(int(r["rtl"]) for r in app)
         lines.append("so lan yeu cau RTL = %d" % rtl)
+    b4res = {}
     try:
-        lines.extend(b4_metrics(a, truth, app, ev, scenario))
+        lines.extend(b4_metrics(a, truth, app, ev, scenario, b4res))
     except Exception as exc:     # do dac B4 khong duoc lam hong ket qua chinh
         lines.append("B4 loi: %r" % (exc,))
+    dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines)
     print("\n".join(lines))
     print("KET QUA: %s" % ("PASS" if ok_all else "FAIL"))
     return 0 if ok_all else 1
