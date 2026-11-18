@@ -182,3 +182,14 @@
 - Người dùng: đo trên Pi ở chế độ nhẹ trước, sẽ mua nguồn Pi 5 chính hãng rồi đo lại sau. Pi vẫn offline (.91 không ping được): chờ người dùng rút cắm lại nguồn rồi mới giao 06 đo chế độ nhẹ (ít luồng, đọc mon.log trước).
 - Pi lên lại (.91). Lead đọc (chỉ đọc) trên Pi: 36,2°C, throttled=0x0, quạt pwm1=0/fan1_input=0, thiết bị pwm-fan có nhận, mốc bật 50°C. mon.log lần rớt 2, dòng cuối: 60,9°C, 0x50000, EXT5V 4,78 V (min gần đó 4,71 V), load ~2. Giao 06 đo chế độ nhẹ (1→3 luồng, NCNN 640/480/320, ghi thêm tốc độ quạt).
 - S3 chế độ nhẹ · 06 infrastructure-engineer · DONE (số sơ bộ, Pi không rớt): NCNN 2 nhân: 640 → 11,04 khung/s, 90 ms; 480 → 19,67, 50 ms; 320 → 37,77, 26 ms; RAM ~0,9 GB; EXT5V ≥ 4,80 V ở 2 nhân, 4,726 V ở 3 nhân (dừng, không chạy 4). Quạt quay khi ≥ 50°C (2176–2985 rpm). Tỉ lệ khung có phát hiện: 640 0,997; 480 0,98; 320 0,90. Chưa: 4 nhân với nguồn đủ, soak 30 phút, so .pt. Chờ nguồn 27 W.
+
+## 2026-11-18 · IP Pi · quyết định của người dùng
+- Tiếp tục dùng 192.168.1.91 (DHCP). Gán IP cố định trên router: người dùng tự làm sau. Trợ lý không đăng nhập router.
+
+## 2026-11-18 · V2b huấn luyện lại nhận diện · 05 software-engineer · DONE, model KHÔNG đạt
+- yolov8n chính thức, 30 epoch, 4.200 ảnh (DUT + Det-Fly + âm COCO), 3,83 giờ CPU. Trọng số `vision/weights/ft2_v8n_best.pt` (không vào git).
+- Tiêu chí: đạt 1/4. Báo động giả 32,2 → 9,3 trên 100 ảnh (đạt). Recall 20–40 px 0,638 (cần 0,90). 4 video máy bay ở ngưỡng 0,5: 69,9% khung vẫn gọi là drone (cần <20%). 120 khung nhãn tay: 84/99 (cần 85; model cũ 88).
+- Quyết định của trưởng phòng: GIỮ `ft_v8n_best.pt` làm model dùng; ft2 chỉ lưu để so sánh.
+- Bằng chứng: `vision/results/v2/compare.md`, `V2_REPORT.md`; trưởng phòng đã đối chiếu bảng compare.md với báo cáo, khớp. Chưa có vai Chất lượng đo lại độc lập.
+- Cảnh báo của agent: kiểm rò rỉ độc lập (dHash) còn 11,1% DUT, 3,5% Det-Fly; chỉ một seed.
+- Sau huấn luyện: bắt đầu chạy mô phỏng `1:none:dive15` (lần đầu của kịch bản cắm xuống).

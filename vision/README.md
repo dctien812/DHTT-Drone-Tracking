@@ -54,3 +54,14 @@ python -I scripts/grab_b1.py runs/b1_videos/best_ft_crop runs/b1_videos/best_ft_
 python -I scripts/catalog_b1.py results/b1/catalog.csv ; python -I scripts/sheets_b1.py runs/b1_videos/sheets
 ```
 `lap` duoc ultralytics tu cai vao `~/venv-vision` khi chay tracker lan dau (lap 0.5.14).
+
+## V2: huan luyen lai ft2_v8n (anh am + chia theo nhom; ket qua: `results/v2/V2_REPORT.md`, bang: `results/v2/compare.md`)
+Du lieu moi: Det-Fly (`data/det-fly`, 7.635 cap xml+jpg khop), COCO am (`data/coco-neg`, may bay/chim, 1.884 anh co giay phep CC BY/BY-SA/PD), tap dung san `data/v2/` (ft2 train/val, test_clean).
+Ket qua: ft2 giam bao dong gia (tap sach 32,2 -> 9,3/100 anh) nhung van goi may bay that la drone (~70% khung o 0,5) va khong dat 3/4 tieu chi -> chua thay ft_v8n.
+```bash
+bash scripts/run_features_v2.sh ; bash scripts/run_py_v2.sh split_v2.py             # dac trung 32x32 + chia theo nhom + kiem ro ri (results/v2/split_summary.md)
+bash scripts/run_download_coco_neg_v2.sh 1600 1200 ; bash scripts/run_py_v2.sh build_data_v2.py
+bash scripts/run_train_v2.sh --epochs 30 --limit 4200                                # ~3,8 gio CPU -> runs/ft2_v8n ; chep best.pt -> weights/ft2_v8n_best.pt
+bash scripts/run_eval_v2.sh <tag> <weights>                                         # tap sach + 120 khung nhan tay
+bash scripts/run_video_v2.sh <tag> <weights> detect ; bash scripts/run_py_v2.sh summarize_v2.py ; bash scripts/run_py_v2.sh compare_v2.py
+```

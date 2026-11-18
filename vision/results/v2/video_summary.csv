@@ -1,0 +1,5 @@
+model,conf,n_drone_videos,drone_frames,det_frame_rate,videos_1id,ids_mean,videos_zero_det,airplane_frames,airplane_frames_with_drone,airplane_rate
+ft2,0.25,114,35496,0.8425,0.2193,4.76,2,1274,946,0.7425
+ft2,0.5,114,35496,0.6782,0.2368,3.19,6,1274,891,0.6994
+ft,0.25,114,35496,0.9123,0.2982,5.26,0,1274,1274,1.0
+ft,0.5,114,35496,0.7919,0.3421,3.63,4,1274,1246,0.978

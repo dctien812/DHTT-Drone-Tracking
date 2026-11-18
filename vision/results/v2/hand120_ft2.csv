@@ -1,0 +1,3 @@
+tag,conf,drone_frames,drone_caught,dets_total,dets_matched,precision,airplane_frames,airplane_called_drone,sure_drone_frames,sure_caught
+ft2,0.25,99,84,101,84,0.8317,20,15,65,60
+ft2,0.5,99,74,83,74,0.8916,20,14,65,57

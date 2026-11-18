@@ -1,0 +1,25 @@
+model,conf,nhom,width_bin,n,recall
+ft,0.25,cu_chua_thay,20-40,294,0.881
+ft,0.25,cu_chua_thay,>40,810,0.9457
+ft,0.25,cu_chua_thay,tat ca,1112,0.9236
+ft,0.25,cu_da_thay,20-40,110,0.8818
+ft,0.25,cu_da_thay,>40,212,0.9717
+ft,0.25,cu_da_thay,tat ca,323,0.9381
+ft,0.5,cu_chua_thay,20-40,294,0.8299
+ft,0.5,cu_chua_thay,>40,810,0.9025
+ft,0.5,cu_chua_thay,tat ca,1112,0.8786
+ft,0.5,cu_da_thay,20-40,110,0.8364
+ft,0.5,cu_da_thay,>40,212,0.9528
+ft,0.5,cu_da_thay,tat ca,323,0.9102
+ft2,0.25,cu_chua_thay,20-40,294,0.8333
+ft2,0.25,cu_chua_thay,>40,810,0.879
+ft2,0.25,cu_chua_thay,tat ca,1112,0.8624
+ft2,0.25,cu_da_thay,20-40,110,0.8818
+ft2,0.25,cu_da_thay,>40,212,0.9009
+ft2,0.25,cu_da_thay,tat ca,323,0.8916
+ft2,0.5,cu_chua_thay,20-40,294,0.7925
+ft2,0.5,cu_chua_thay,>40,810,0.8025
+ft2,0.5,cu_chua_thay,tat ca,1112,0.795
+ft2,0.5,cu_da_thay,20-40,110,0.8091
+ft2,0.5,cu_da_thay,>40,212,0.8396
+ft2,0.5,cu_da_thay,tat ca,323,0.8266

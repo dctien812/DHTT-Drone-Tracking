@@ -1,0 +1,13 @@
+model,kind,n,called_drone_025,rate
+ft,coco_air,20,15,0.75
+ft,coco_bird,15,11,0.733
+ft,comp_neg_air,40,21,0.525
+ft,comp_neg_bird,30,21,0.7
+ft,df_bg,25,7,0.28
+ft,dut_bg,15,1,0.067
+ft2,coco_air,20,1,0.05
+ft2,coco_bird,15,1,0.067
+ft2,comp_neg_air,40,9,0.225
+ft2,comp_neg_bird,30,5,0.167
+ft2,df_bg,25,3,0.12
+ft2,dut_bg,15,1,0.067
