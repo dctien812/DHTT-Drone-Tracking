@@ -50,7 +50,7 @@ POST cần `Content-Type: application/json`, `Origin` (nếu có) phải trùng 
 - Luồng 2 `infer`: thu nhỏ (<=960 px) -> `Detector.track()` (YOLO + ByteTrack) -> `LockManager.update()` -> hình học -> `LockSink.on_lock()` -> vẽ -> JPEG -> công bố.
 - Luồng HTTP (werkzeug threaded) chỉ đọc kết quả công bố.
 - Giao diện mở rộng: `FrameSource` (`sources.py`: file, camera OpenCV; thêm `picamera2` bằng lớp con + đăng ký ở `make_source`), `Detector`, `LockSink` (`outputs.py`: hiện có `LogSink`; sau này `ServoSink` một trục gật, đọc trạng thái FC).
-- Hình học (`geometry.py`): góc = atan((u-cx)/fx), atan((cy-v)/fy) (+ = phải/lên); khoảng cách = fx * rộng_thật / rộng_khung_bao, mặc định rộng 0,30 m (`--real-width`), luôn hiện "giả định mục tiêu rộng X m". `fx` mặc định suy từ `--hfov` (66 độ) và khung hình; ghi đè bằng `--fx --fy --cx --cy` (pixel của khung ĐÃ xử lý, sau thu nhỏ).
+- Hình học (`geometry.py`): góc = atan((u-cx)/fx), atan((cy-v)/fy) (+ = phải/lên); khoảng cách = fx * rộng_thật / rộng_khung_bao, mặc định rộng 0,30 m (`--real-width`), luôn hiện "giả định mục tiêu rộng X m". `fx` mặc định suy từ `--hfov` (66 độ) và khung hình; ghi đè bằng `--calib camera.json` hoặc `--fx --fy --cx --cy`. Quy ước: các giá trị này tính trên khung GỐC (chưa thu nhỏ bằng `--max-width`; với `--calib` là khung lúc hiệu chuẩn), pipeline tự nhân theo tỉ lệ thu nhỏ thực tế. Khung lúc chạy khác cỡ lúc hiệu chuẩn thì quy đổi theo tỉ lệ và cảnh báo (log + danh sách sự kiện); khác cả tỉ lệ khung thì cảnh báo mạnh hơn vì fx/cx/cy có thể sai. `--fx` đặt tay thắng giá trị trong file.
 - Tự bỏ khóa khi mất vật thể quá `--lost-timeout` (2 s), báo trên màn hình và trong log.
 - Gán lại khóa khi bộ theo dõi đổi ID (`lock.py`, bật mặc định, tắt bằng `--no-reacquire`): trong thời gian chờ, nếu có track MỚI
   (ID chưa có mặt ở khung cuối còn thấy mục tiêu) nằm gần vị trí dự đoán (tâm cuối + vận tốc ảnh ~0,5 s gần nhất, ngoại suy tối đa 1 s)
@@ -69,11 +69,11 @@ rpicam-hello --list-cameras                   # phải thấy imx708
 cd lab && ~/venv-lab/bin/python -m labview --source picamera2 --cam-width 1280 --cam-height 720 --cam-fps 30 --hfov 102
 ```
 - `--focus infinity` (mặc định: lấy nét cố định ở vô cực) | `continuous` (tự lấy nét liên tục) | `manual --lens-position <diop>`.
-- Nguồn `labview/picam.py` (`Picamera2Source`): khung BGR, `queue=False` + 2 bộ đệm để luôn lấy khung mới nhất; thiếu thư viện hoặc không thấy camera thì báo lỗi rõ và thoát (mã 1).
+- Nguồn `labview/picam.py` (`Picamera2Source`): khung BGR, `queue=False` + `--cam-buffers` bộ đệm (mặc định 4; 2 có thể tụt khung) để luôn lấy khung mới nhất; một luồng chụp riêng gọi `capture_array`, lỗi nhất thời được log và thử lại 3 lần, quá 5 s không có khung (hoặc lỗi liên tục) thì báo "Mat nguon hinh" (watchdog phía ta, không dựa vào timeout của picamera2); `close()` không treo khi camera đứng hình; kích thước thực sau `configure` và fps đo được (30 khung) được log nếu khác yêu cầu; `--lens-position` bị cảnh báo nếu `--focus` khác `manual`; thiếu thư viện hoặc không thấy camera thì báo lỗi rõ và thoát (mã 1).
 - Hiệu chuẩn (ảnh bàn cờ, OpenCV): `python tools/calibrate_camera.py --images <thư mục ảnh> --cols 9 --rows 6 --square-mm 25 --out camera.json`
-  ghi ma trận camera + hệ số méo, in sẵn `--fx --fy --cx --cy` (tính trên khung chưa thu nhỏ; nhân theo tỉ lệ nếu `--max-width` nhỏ hơn bề rộng khung).
+  ghi ma trận camera + hệ số méo, in sẵn lệnh dùng `--calib camera.json` (không chép tay fx/cx). Ảnh khác cỡ hoặc không có bàn cờ bị báo từng ảnh và bỏ; lẫn cỡ thì lấy cỡ đa số (hòa thì báo lỗi); đuôi ảnh không phân biệt hoa thường. **Hệ số méo CHƯA được dùng** (chưa undistort): chỉ fx,fy,cx,cy được áp dụng.
 - Suy luận trên Pi 5 cần NCNN/ONNX thay `.pt`; tốc độ khung hình chưa đo.
-- `--hfov` cho Camera Module 3 Wide khoảng 102 độ (theo nhà sản xuất, CHƯA kiểm); góc rộng có méo ống kính, cần hiệu chỉnh nếu muốn góc chính xác.
+- `--source picamera2` mà không truyền `--hfov` lẫn `--calib` thì tự dùng hfov 102 (ghi log); webcam/video mặc định 66. `--hfov` cho Camera Module 3 Wide khoảng 102 độ (theo nhà sản xuất, CHƯA kiểm); góc rộng có méo ống kính, cần hiệu chỉnh nếu muốn góc chính xác.
 
 ## Dùng lại từ `AI-6` (chỉ đọc ý tưởng/mẫu)
 `YOLOv8/video_processor.py`: mô hình luồng camera/suy luận tách rời, `grab()+retrieve()` lấy khung mới nhất, mở V4L2 MJPG buffer 1; `frame_processor.py`: gọi `model.track(persist=True, bytetrack)`. `AI-6` không có mã picamera2 (chỉ comment V4L2). Không dùng `drone_tg\`.

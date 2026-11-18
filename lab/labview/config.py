@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import socket
 from dataclasses import dataclass, field
@@ -49,6 +50,10 @@ class Config:
     cam_fps: int = 30
     cam_focus: str = "infinity"     # picamera2: infinity | continuous | manual
     cam_lens_position: Optional[float] = None   # diop, chi dung khi cam_focus = manual
+    cam_buffers: int = 4            # picamera2: so bo dem (2 de tut khung)
+    calib: Optional[str] = None     # file camera.json tu tools/calibrate_camera.py
+    calib_size: Optional[tuple] = None   # (rong, cao) luc hieu chuan; fx,fy,cx,cy tinh tren khung co cop nay
+    hfov_note: Optional[str] = None      # ghi chu hfov tu dong (main ghi log)
     host: Optional[str] = None
     port: int = 8080
     allow_network: bool = False
@@ -80,6 +85,26 @@ def load_password(password_file: Optional[str]) -> Optional[str]:
     return os.environ.get(PASSWORD_ENV) or None
 
 
+def apply_calib(cfg: Config, path: str) -> Config:
+    """Doc fx,fy,cx,cy + kich thuoc luc hieu chuan tu camera.json. Tham so --fx.. dat tay thang file.
+    Moi gia tri tinh tren khung cop `calib_size`; pipeline tu quy doi theo ti le thu nho thuc te."""
+    try:
+        with open(Path(path).expanduser(), encoding="utf-8") as f:
+            d = json.load(f)
+        k = d["camera_matrix"]
+        w, h = int(d["width"]), int(d["height"])
+        vals = (float(k[0][0]), float(k[1][1]), float(k[0][2]), float(k[1][2]))
+    except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
+        raise ConfigError(f"Khong doc duoc file --calib ({type(e).__name__}: {e})") from e
+    if w <= 0 or h <= 0 or vals[0] <= 0 or vals[1] <= 0:
+        raise ConfigError("File --calib: width/height/fx/fy phai > 0")
+    cfg.calib, cfg.calib_size = path, (w, h)
+    for name, v in zip(("fx", "fy", "cx", "cy"), vals):
+        if getattr(cfg, name) is None:
+            setattr(cfg, name, v)
+    return cfg
+
+
 def validate(cfg: Config) -> Config:
     """Chuẩn hóa host và áp quy tắc bảo mật; ném ConfigError nếu vi phạm."""
     if cfg.host is None:
@@ -106,5 +131,7 @@ def validate(cfg: Config) -> Config:
         raise ConfigError("reacq: gate > 0, gate_per_s >= 0, 0 < size_min <= 1 <= size_max")
     if not (1 <= cfg.jpeg_quality <= 100):
         raise ConfigError("jpeg_quality phai trong [1,100]")
+    if not (2 <= cfg.cam_buffers <= 16):
+        raise ConfigError("cam_buffers phai trong [2,16]")
     cfg.threads = max(1, min(cfg.threads, 8))
     return cfg

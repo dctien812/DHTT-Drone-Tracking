@@ -1,5 +1,7 @@
 """Test nguon picamera2 bang module picamera2 GIA (khong can Pi), va script hieu chuan bang anh ban co tong hop."""
 import sys
+import threading
+import time
 import types
 
 import cv2
@@ -74,7 +76,7 @@ def test_doc_khung_bgr_qua_module_gia(fake_picamera2):
     cam = fake_picamera2.instances[0]
     kw = cam.cfg_kwargs
     assert kw["main"] == {"size": (640, 480), "format": "RGB888"}   # RGB888 cua picamera2 = byte B,G,R
-    assert kw["queue"] is False and kw["buffer_count"] <= 3          # luon khung moi nhat
+    assert kw["queue"] is False and kw["buffer_count"] == 4          # luon khung moi nhat; mac dinh 4 (2 co the tut khung)
     assert kw["controls"]["FrameRate"] == 25.0
     assert cam.calls == ["configure", "start"]
     f1, f2 = src.read(), src.read()
@@ -164,3 +166,185 @@ def test_hieu_chuan_it_anh_bao_loi(tmp_path):
     from tools import calibrate_camera as cal
     with pytest.raises(ValueError, match="can >= 5"):
         cal.calibrate([np.full((100, 100, 3), 255, np.uint8)] * 3, 9, 6, 25.0)
+
+
+# ---------------- (c)(d)(e)(f): doc loi, buffer, canh bao, dong an toan
+def _fast(src):
+    src.retry_delay_s = 0.0
+    return src
+
+
+def test_read_loi_mot_lan_thi_thu_lai(fake_picamera2, caplog):
+    class Flaky(fake_picamera2):
+        def capture_array(self, name="main"):
+            if self.frames == 0:
+                self.frames += 1
+                raise OSError("loi nhat thoi")
+            return super().capture_array(name)
+    sys.modules["picamera2"].Picamera2 = Flaky
+    src = _fast(sources.make_source("picamera2"))
+    src.open()
+    with caplog.at_level("WARNING", logger="labview"):
+        f = src.read()
+    assert f is not None and f.index == 0
+    assert any("capture_array loi" in r.message for r in caplog.records)   # exception duoc log, khong nuot
+    assert src.read() is not None
+    src.close()
+
+
+def test_read_loi_lien_tuc_bao_mat_nguon(fake_picamera2):
+    class Dead(fake_picamera2):
+        def capture_array(self, name="main"):
+            self.frames += 1
+            raise OSError("mat ket noi")
+    sys.modules["picamera2"].Picamera2 = Dead
+    src = _fast(sources.make_source("picamera2"))
+    src.open()
+    assert src.read() is None
+    assert Dead.instances[0].frames == src.max_retries + 1   # 1 lan dau + max_retries lan thu lai
+    src.close()
+
+
+def test_read_het_gio_khi_camera_dung_hinh(fake_picamera2):
+    gate = threading.Event()
+
+    class Frozen(fake_picamera2):
+        def capture_array(self, name="main"):
+            gate.wait(10)
+            return super().capture_array(name)
+    sys.modules["picamera2"].Picamera2 = Frozen
+    src = sources.make_source("picamera2")
+    src.frame_timeout_s = 0.2
+    src.open()
+    t0 = time.monotonic()
+    assert src.read() is None                  # pipeline se bao "Mat nguon hinh"
+    assert time.monotonic() - t0 < 2.0
+    gate.set()
+    src.close()
+
+
+def test_close_khi_read_dang_chan_khong_treo(fake_picamera2):
+    gate = threading.Event()
+
+    class Blocking(fake_picamera2):
+        def capture_array(self, name="main"):
+            gate.wait(30)
+            raise OSError("bi huy")
+
+        def stop(self):
+            gate.wait(30)                       # ca stop cung ket
+            super().stop()
+    sys.modules["picamera2"].Picamera2 = Blocking
+    src = sources.make_source("picamera2")
+    src.frame_timeout_s, src.teardown_timeout_s = 30.0, 0.3
+    src.open()
+    out = []
+    rt = threading.Thread(target=lambda: out.append(src.read()), daemon=True)
+    rt.start()
+    time.sleep(0.1)
+    t0 = time.monotonic()
+    src.close()
+    rt.join(2.0)
+    try:
+        assert time.monotonic() - t0 < 4.0     # khong treo
+        assert not rt.is_alive() and out == [None]   # read() dang cho cung duoc nha ra
+        src.close()                             # goi lai van an toan
+    finally:
+        gate.set()
+
+
+@pytest.mark.parametrize("fail_at", ["configure", "start"])
+def test_loi_configure_start_van_dong_camera(fake_picamera2, fail_at):
+    class Bad(fake_picamera2):
+        pass
+
+    def boom(self, *a, **k):
+        raise RuntimeError("hong")
+    setattr(Bad, fail_at, boom)
+    sys.modules["picamera2"].Picamera2 = Bad
+    with pytest.raises(RuntimeError, match="Khong mo duoc Pi camera"):
+        sources.make_source("picamera2").open()
+    assert "close" in Bad.instances[0].calls
+
+
+def test_buffers_va_kich_thuoc_thuc(fake_picamera2, caplog):
+    class Sized(fake_picamera2):
+        def camera_configuration(self):
+            return {"main": {"size": (1536, 864)}}
+
+        def capture_array(self, name="main"):
+            return np.zeros((864, 1536, 3), np.uint8)
+    sys.modules["picamera2"].Picamera2 = Sized
+    src = sources.make_source("picamera2", width=1280, height=720, buffers=6)
+    with caplog.at_level("WARNING", logger="labview"):
+        src.open()
+    assert Sized.instances[0].cfg_kwargs["buffer_count"] == 6
+    assert (src.w, src.h) == (1536, 864)
+    assert any("khac yeu cau" in r.message for r in caplog.records)
+    src.close()
+    with pytest.raises(ValueError):
+        sources.make_source("picamera2", buffers=1)
+
+
+def test_fps_thuc_duoc_do(fake_picamera2):
+    src = sources.make_source("picamera2", fps=30)
+    src.fps_window = 5
+    src.open()
+    for _ in range(6):
+        src.read()
+    assert src.fps != 30.0 and src.fps > 0       # do tu khung that, khong chep theo yeu cau
+    src.close()
+
+
+def test_lens_position_bi_bo_qua_thi_canh_bao(caplog):
+    with caplog.at_level("WARNING", logger="labview"):
+        sources.make_source("picamera2", focus="infinity", lens_position=0.5)
+    assert any("--lens-position" in r.message and "bi bo qua" in r.message for r in caplog.records)
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="labview"):
+        sources.make_source("picamera2", focus="manual", lens_position=0.5)
+    assert not caplog.records
+
+
+def test_cli_cam_buffers_va_hfov_mac_dinh():
+    from labview.__main__ import parse
+    assert parse(["--source", "picamera2"]).cam_buffers == 4
+    assert parse(["--source", "picamera2", "--cam-buffers", "3"]).cam_buffers == 3
+    c = parse(["--source", "picamera2"])
+    assert c.hfov_deg == 102.0 and c.hfov_note                      # tu dong, co ghi chu de log
+    assert parse(["--source", "picamera2", "--hfov", "90"]).hfov_deg == 90.0
+    assert parse(["--source", "file:x"]).hfov_deg == 66.0           # webcam/video giu 66
+
+
+def _board_dir(tmp_path, ext, extra_sizes=()):
+    d = tmp_path / "imgs"
+    d.mkdir()
+    params = [(0, 0, (0, 0)), (30, 10, (20, 0)), (-30, 10, (-10, 10)), (20, -20, (10, -10)), (-20, -20, (0, 20)),
+              (40, 0, (30, 10)), (0, 30, (0, 0)), (-40, 0, (-20, 0))]
+    for i, (ax, ay, sh) in enumerate(params):
+        im = cv2.cvtColor(_board_view(9, 6, 40, (640, 480), ax, ay, sh), cv2.COLOR_GRAY2BGR)
+        assert cv2.imwrite(str(d / f"b{i}{ext}"), im, [cv2.IMWRITE_JPEG_QUALITY, 98])
+    for j, size in enumerate(extra_sizes):
+        cv2.imwrite(str(d / f"x{j}{ext}"), np.full((size[1], size[0], 3), 200, np.uint8))
+    return d
+
+
+def test_hieu_chuan_duoi_JPG_lan_co_anh(tmp_path, capsys):
+    from tools import calibrate_camera as cal
+    d = _board_dir(tmp_path, ".JPG", extra_sizes=[(320, 240), (640, 480)])   # 1 anh khac co, 1 anh dung co nhung khong co ban co
+    out = tmp_path / "cam.json"
+    assert cal.main(["--images", str(d), "--cols", "9", "--rows", "6", "--out", str(out)]) == 0
+    import json
+    res = json.loads(out.read_text())
+    assert (res["width"], res["height"]) == (640, 480) and res["images_total"] == 10 and res["images_used"] >= 5
+    cap = capsys.readouterr()
+    assert "BO QUA x0.JPG" in cap.err and "320x240" in cap.err            # khac co: ten + ly do
+    assert "BO QUA x1.JPG" in cap.err and "khong tim thay ban co" in cap.err
+    assert f"--calib {out}" in cap.out and "--fx" not in cap.out         # in lenh dung --calib
+
+
+def test_hieu_chuan_lan_co_hoa_thi_bao_loi():
+    from tools import calibrate_camera as cal
+    a, b = np.full((100, 100, 3), 255, np.uint8), np.full((50, 50, 3), 255, np.uint8)
+    with pytest.raises(ValueError, match="khong co co da so"):
+        cal.calibrate([a, a, b, b], 9, 6, 25.0)

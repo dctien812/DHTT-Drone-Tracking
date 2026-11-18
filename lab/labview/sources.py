@@ -143,7 +143,7 @@ def _is_linux() -> bool:
 
 
 def make_source(spec: str, *, pace: bool = True, width: int = 1280, height: int = 720, fps: int = 30,
-                focus: str = "infinity", lens_position: Optional[float] = None) -> FrameSource:
+                focus: str = "infinity", lens_position: Optional[float] = None, buffers: int = 4) -> FrameSource:
     """spec: 'file:<duong_dan>' | 'camera:<chi_so|/dev/videoN>' | 'picamera2'."""
     kind, _, arg = spec.partition(":")
     if kind == "file" and arg:
@@ -152,5 +152,5 @@ def make_source(spec: str, *, pace: bool = True, width: int = 1280, height: int 
         return OpenCVCameraSource(arg or "0", width, height, fps)
     if kind == "picamera2":
         from .picam import Picamera2Source   # import muon: tranh vong import, picamera2 chi nap khi open()
-        return Picamera2Source(width, height, fps, focus, lens_position)
+        return Picamera2Source(width, height, fps, focus, lens_position, buffers=buffers)
     raise ValueError("--source phai la file:<duong_dan>, camera:<chi_so> hoac picamera2")

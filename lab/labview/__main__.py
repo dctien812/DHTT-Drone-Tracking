@@ -8,7 +8,7 @@ import signal
 import sys
 import threading
 
-from .config import DEFAULT_WEIGHTS, Config, ConfigError, load_password, validate
+from .config import DEFAULT_WEIGHTS, Config, ConfigError, apply_calib, load_password, validate
 
 
 def parse(argv=None) -> Config:
@@ -20,14 +20,18 @@ def parse(argv=None) -> Config:
     p.add_argument("--focus", choices=("infinity", "continuous", "manual"), default="infinity", dest="cam_focus",
                    help="picamera2: infinity = co dinh o vo cuc (mac dinh), continuous = tu lay net lien tuc, manual = dung --lens-position")
     p.add_argument("--lens-position", type=float, default=None, dest="cam_lens_position", help="diop (0 = vo cuc), voi --focus manual")
+    p.add_argument("--cam-buffers", type=int, default=4, dest="cam_buffers", help="picamera2: so bo dem (mac dinh 4; 2 co the tut khung)")
+    p.add_argument("--calib", default=None, help="camera.json tu tools/calibrate_camera.py: lay fx,fy,cx,cy + do phan giai luc hieu chuan, tu quy doi theo ti le thu nho")
     p.add_argument("--weights", default=DEFAULT_WEIGHTS)
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--conf", type=float, default=0.25)
     p.add_argument("--threads", type=int, default=4, help="so luong torch (toi da 8)")
     p.add_argument("--max-width", type=int, default=960)
-    p.add_argument("--hfov", type=float, default=66.0, dest="hfov_deg", help="FOV ngang (do)")
+    p.add_argument("--hfov", type=float, default=None, dest="hfov_deg",
+                   help="FOV ngang (do). Mac dinh 66; voi --source picamera2 khong kem --calib/--hfov thi 102")
     for k in ("fx", "fy", "cx", "cy"):
-        p.add_argument(f"--{k}", type=float, default=None)
+        p.add_argument(f"--{k}", type=float, default=None,
+                       help="pixel tren khung GOC (truoc khi thu nho --max-width; voi --calib: tren khung luc hieu chuan), tu quy doi theo ti le thu nho" if k == "fx" else None)
     p.add_argument("--real-width", type=float, default=0.30, dest="real_width_m", help="be rong that gia dinh cua muc tieu (m)")
     p.add_argument("--lost-timeout", type=float, default=2.0, dest="lost_timeout_s")
     p.add_argument("--no-reacquire", action="store_true", help="tat tu gan lai khoa khi bo theo doi doi ID")
@@ -48,14 +52,19 @@ def parse(argv=None) -> Config:
     p.add_argument("--log-file", default=None)
     a = p.parse_args(argv)
     cfg = Config(source=a.source, weights=a.weights, imgsz=a.imgsz, conf=a.conf, threads=a.threads,
-                 max_width=a.max_width, hfov_deg=a.hfov_deg, fx=a.fx, fy=a.fy, cx=a.cx, cy=a.cy,
+                 max_width=a.max_width, hfov_deg=66.0 if a.hfov_deg is None else a.hfov_deg, fx=a.fx, fy=a.fy, cx=a.cx, cy=a.cy,
                  real_width_m=a.real_width_m, lost_timeout_s=a.lost_timeout_s,
                  reacquire=not a.no_reacquire, reacq_gate=a.reacq_gate, reacq_gate_per_s=a.reacq_gate_per_s,
                  reacq_size_min=a.reacq_size_min, reacq_size_max=a.reacq_size_max, reacq_min_conf=a.reacq_min_conf,
                  click_margin_px=a.click_margin_px, loop=not a.no_loop, pace=not a.no_pace,
                  host=a.host, port=a.port, allow_network=a.allow_network, allowed_hosts=list(a.allowed_hosts),
                  log_file=a.log_file, cam_width=a.cam_width, cam_height=a.cam_height, cam_fps=a.cam_fps,
-                 cam_focus=a.cam_focus, cam_lens_position=a.cam_lens_position)
+                 cam_focus=a.cam_focus, cam_lens_position=a.cam_lens_position, cam_buffers=a.cam_buffers)
+    if a.calib:
+        apply_calib(cfg, a.calib)
+    elif a.hfov_deg is None and a.source.partition(":")[0] == "picamera2":
+        cfg.hfov_deg = 102.0
+        cfg.hfov_note = "picamera2 ma khong co --hfov/--calib: dung hfov 102 do (Camera Module 3 Wide, theo nha san xuat, chua kiem)"
     cfg.password = load_password(a.password_file)
     if a.allow_network and a.host in (None, "0.0.0.0", "::"):
         print("CANH BAO: --allow-network ma khong chi --host (hoac --host 0.0.0.0): dang nghe MOI giao dien mang. "
@@ -77,6 +86,11 @@ def main(argv=None) -> int:
                         format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%dT%H:%M:%S%z")
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
+    if cfg.hfov_note:
+        logging.getLogger("labview").info(cfg.hfov_note)
+    if cfg.calib:
+        logging.getLogger("labview").info("Hieu chuan %s: khung %dx%d; he so meo CHUA duoc dung (chua undistort)",
+                                          cfg.calib, *cfg.calib_size)
     from werkzeug.serving import make_server
     from .detector import YoloTracker
     from .outputs import LogSink
@@ -86,7 +100,8 @@ def main(argv=None) -> int:
 
     try:
         source = make_source(cfg.source, pace=cfg.pace, width=cfg.cam_width, height=cfg.cam_height, fps=cfg.cam_fps,
-                             focus=cfg.cam_focus, lens_position=cfg.cam_lens_position)
+                             focus=cfg.cam_focus, lens_position=cfg.cam_lens_position,
+                             buffers=cfg.cam_buffers)
     except (ValueError, NotImplementedError) as e:
         print(f"LOI: {e}", file=sys.stderr)
         return 2

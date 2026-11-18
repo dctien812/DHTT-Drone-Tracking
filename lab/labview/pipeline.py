@@ -102,10 +102,10 @@ class Pipeline:
         return self._done
 
     # ------------------------------------------------------------ sự kiện
-    def _on_event(self, msg: str) -> None:
+    def _on_event(self, msg: str, level: int = logging.INFO) -> None:
         ts = dt.datetime.now().astimezone().isoformat(timespec="milliseconds")
         self.events.append({"ts": ts, "msg": msg})
-        log.info(msg)
+        log.log(level, msg)
         if msg.startswith("TU BO KHOA"):
             self._notice = (msg, time.monotonic())
 
@@ -152,17 +152,33 @@ class Pipeline:
             self._pub_cv.notify_all()
 
     # ------------------------------------------------------------ xử lý một khung
-    def _intrinsics(self, w: int, h: int) -> geometry.Intrinsics:
-        if self._k is None or self._k_wh != (w, h):
+    def _intrinsics(self, w: int, h: int, raw_w: Optional[int] = None, raw_h: Optional[int] = None) -> geometry.Intrinsics:
+        """w,h = khung đã thu nhỏ; raw_w,raw_h = khung gốc. Quy ước: --fx/--fy/--cx/--cy (và --calib) tính trên
+        khung gốc (hoặc khung lúc hiệu chuẩn nếu có --calib), ở đây nhân theo tỉ lệ thu nhỏ thực tế."""
+        raw_w, raw_h = raw_w or w, raw_h or h
+        key = (w, h, raw_w, raw_h)
+        if self._k is None or self._k_wh != key:
             c = self.cfg
-            self._k = geometry.Intrinsics.build(w, h, c.hfov_deg, c.fx, c.fy, c.cx, c.cy)
-            self._k_wh = (w, h)
+            ref_w, ref_h = c.calib_size or (raw_w, raw_h)
+            sx, sy = w / ref_w, h / ref_h
+            sc = lambda v, f: None if v is None else v * f
+            self._k = geometry.Intrinsics.build(w, h, c.hfov_deg, sc(c.fx, sx), sc(c.fy, sy), sc(c.cx, sx), sc(c.cy, sy))
+            self._k_wh = key
+            if c.calib_size and (raw_w, raw_h) != tuple(c.calib_size):
+                cw, ch = c.calib_size
+                if abs((raw_w / raw_h) / (cw / ch) - 1.0) > 0.01:
+                    self._on_event(f"CANH BAO: ti le khung {raw_w}x{raw_h} khac luc hieu chuan {cw}x{ch} (crop/ti le khac): "
+                                   "fx,cx,cy co the sai, hay hieu chuan lai o dung che do camera", level=logging.WARNING)
+                else:
+                    self._on_event(f"Khung {raw_w}x{raw_h} khac do phan giai hieu chuan {cw}x{ch} (cung ti le): da quy doi he so",
+                                   level=logging.WARNING)
         return self._k
 
     def process_frame(self, fr: Frame) -> None:
         """Xử lý đồng bộ một khung (luồng suy luận gọi; test gọi trực tiếp)."""
         t0 = time.monotonic()
         img = fr.image
+        raw_h, raw_w = img.shape[:2]
         mw = self.cfg.max_width
         if mw and img.shape[1] > mw:
             s = mw / img.shape[1]
@@ -175,7 +191,7 @@ class Pipeline:
         tracks = self.detector.track(img)
         t1 = time.monotonic()
         status = self.lock.update(tracks, (w, h))
-        k = self._intrinsics(w, h)
+        k = self._intrinsics(w, h, raw_w, raw_h)
         report = self._report(status, k, fr.ts)
         for s in self.sinks:
             try:

@@ -9,9 +9,10 @@ Khong gui lenh toi thiet bi nao; chi doc anh va ghi mot file JSON.
 from __future__ import annotations
 
 import argparse
-import glob
+import collections
 import json
 import os
+import shlex
 import sys
 
 import cv2
@@ -29,22 +30,30 @@ def find_corners(gray: np.ndarray, pattern: tuple):
     return cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), crit)
 
 
-def calibrate(images: list, cols: int, rows: int, square_mm: float) -> dict:
-    """images: danh sach ndarray (BGR hoac xam), cung kich thuoc. Nem ValueError neu qua it anh dung duoc."""
+def calibrate(images: list, cols: int, rows: int, square_mm: float, names: list = None) -> dict:
+    """images: danh sach ndarray (BGR hoac xam), nen cung kich thuoc: lan co thi lay co DA SO, anh co khac bi bao va bo
+    (hoa thi nem ValueError). Anh khong thay ban co bi bao tren stderr (kem ten trong `names`). Nem ValueError neu qua it anh dung duoc."""
     pattern = (cols, rows)
     obj = np.zeros((cols * rows, 3), np.float32)
     obj[:, :2] = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2) * square_mm
-    obj_pts, img_pts, size = [], [], None
-    for img in images:
+    names = names or [f"anh #{i}" for i in range(len(images))]
+    sizes = collections.Counter((im.shape[1], im.shape[0]) for im in images)
+    common = sizes.most_common()
+    if len(common) > 1 and common[0][1] == common[1][1]:   # hoa: khong doan
+        raise ValueError("Anh lan do phan giai, khong co co da so (" + ", ".join(f"{w}x{h}: {n} anh" for (w, h), n in common)
+                         + "): chi de anh cung do phan giai voi che do se chay labview")
+    obj_pts, img_pts, size = [], [], (common[0][0] if common else None)   # co theo da so
+    for img, name in zip(images, names):
+        if (img.shape[1], img.shape[0]) != size:
+            print(f"BO QUA {name}: co {img.shape[1]}x{img.shape[0]} khac da so {size[0]}x{size[1]}", file=sys.stderr)
+            continue
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
-        if size is None:
-            size = (gray.shape[1], gray.shape[0])
-        elif size != (gray.shape[1], gray.shape[0]):
-            continue   # khac do phan giai: bo qua
         c = find_corners(gray, pattern)
-        if c is not None:
-            obj_pts.append(obj)
-            img_pts.append(c)
+        if c is None:
+            print(f"BO QUA {name}: khong tim thay ban co {cols}x{rows} goc trong", file=sys.stderr)
+            continue
+        obj_pts.append(obj)
+        img_pts.append(c)
     if len(img_pts) < 5:
         raise ValueError(f"Chi {len(img_pts)}/{len(images)} anh tim thay ban co {cols}x{rows} goc trong (can >= 5, nen 15+)")
     rms, k, dist, _, _ = cv2.calibrateCamera(obj_pts, img_pts, size, None, None)
@@ -54,10 +63,16 @@ def calibrate(images: list, cols: int, rows: int, square_mm: float) -> dict:
             "images_used": len(img_pts), "images_total": len(images)}
 
 
-def labview_flags(result: dict) -> str:
-    k = result["camera_matrix"]
-    return (f"--cam-width {result['width']} --cam-height {result['height']} "
-            f"--fx {k[0][0]:.1f} --fy {k[1][1]:.1f} --cx {k[0][2]:.1f} --cy {k[1][2]:.1f}")
+def labview_flags(result: dict, calib_path: str = "camera.json") -> str:
+    """labview doc fx,fy,cx,cy tu file va tu quy doi theo ti le thu nho (--max-width): khong chep tay he so."""
+    return f"--calib {shlex.quote(calib_path)} --cam-width {result['width']} --cam-height {result['height']}"
+
+
+def list_images(folder: str) -> list:
+    """Duoi anh khop khong phan biet hoa thuong (.JPG, .Png...), sap xep, khong trung."""
+    exts = tuple(e[1:] for e in EXTS)
+    return sorted(os.path.join(folder, n) for n in os.listdir(folder)
+                  if n.lower().endswith(exts) and os.path.isfile(os.path.join(folder, n)))
 
 
 def main(argv=None) -> int:
@@ -68,21 +83,30 @@ def main(argv=None) -> int:
     p.add_argument("--square-mm", type=float, default=25.0)
     p.add_argument("--out", default="camera_calibration.json")
     a = p.parse_args(argv)
-    paths = sorted(f for e in EXTS for f in glob.glob(os.path.join(a.images, e)))
-    imgs = [im for im in (cv2.imread(f) for f in paths) if im is not None]
+    if not os.path.isdir(a.images):
+        print(f"LOI: khong co thu muc {a.images}", file=sys.stderr)
+        return 2
+    imgs, names = [], []
+    for f in list_images(a.images):
+        im = cv2.imread(f)
+        if im is None:
+            print(f"BO QUA {os.path.basename(f)}: khong doc duoc file anh", file=sys.stderr)
+            continue
+        imgs.append(im)
+        names.append(os.path.basename(f))
     if not imgs:
         print(f"LOI: khong co anh trong {a.images}", file=sys.stderr)
         return 2
     try:
-        res = calibrate(imgs, a.cols, a.rows, a.square_mm)
+        res = calibrate(imgs, a.cols, a.rows, a.square_mm, names)
     except ValueError as e:
         print(f"LOI: {e}", file=sys.stderr)
         return 1
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(res, f, indent=2)
     print(f"Da ghi {a.out}: {res['images_used']}/{res['images_total']} anh, RMS {res['rms_reprojection_px']:.3f} px")
-    print("Tham so cho labview (khung CHUA thu nho; neu --max-width < rong thi nhan he so fx,fy,cx,cy theo ti le):")
-    print("  " + labview_flags(res))
+    print("Chay labview voi (labview tu quy doi fx,fy,cx,cy theo ti le thu nho; he so meo CHUA duoc dung):")
+    print("  " + labview_flags(res, a.out))
     return 0
 
 
