@@ -47,6 +47,8 @@ class Config:
     cam_width: int = 1280
     cam_height: int = 720
     cam_fps: int = 30
+    cam_focus: str = "infinity"     # picamera2: infinity | continuous | manual
+    cam_lens_position: Optional[float] = None   # diop, chi dung khi cam_focus = manual
     host: Optional[str] = None
     port: int = 8080
     allow_network: bool = False

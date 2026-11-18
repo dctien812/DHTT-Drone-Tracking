@@ -13,7 +13,13 @@ from .config import DEFAULT_WEIGHTS, Config, ConfigError, load_password, validat
 
 def parse(argv=None) -> Config:
     p = argparse.ArgumentParser(prog="labview", description="Man hinh lab Drone Tracking (L0) - khong gui lenh toi thiet bi nao")
-    p.add_argument("--source", required=True, help="file:<video> | camera:<chi_so|/dev/videoN>")
+    p.add_argument("--source", required=True, help="file:<video> | camera:<chi_so|/dev/videoN> | picamera2")
+    p.add_argument("--cam-width", type=int, default=1280, help="do phan giai camera (camera:/picamera2)")
+    p.add_argument("--cam-height", type=int, default=720)
+    p.add_argument("--cam-fps", type=int, default=30)
+    p.add_argument("--focus", choices=("infinity", "continuous", "manual"), default="infinity", dest="cam_focus",
+                   help="picamera2: infinity = co dinh o vo cuc (mac dinh), continuous = tu lay net lien tuc, manual = dung --lens-position")
+    p.add_argument("--lens-position", type=float, default=None, dest="cam_lens_position", help="diop (0 = vo cuc), voi --focus manual")
     p.add_argument("--weights", default=DEFAULT_WEIGHTS)
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--conf", type=float, default=0.25)
@@ -48,7 +54,8 @@ def parse(argv=None) -> Config:
                  reacq_size_min=a.reacq_size_min, reacq_size_max=a.reacq_size_max, reacq_min_conf=a.reacq_min_conf,
                  click_margin_px=a.click_margin_px, loop=not a.no_loop, pace=not a.no_pace,
                  host=a.host, port=a.port, allow_network=a.allow_network, allowed_hosts=list(a.allowed_hosts),
-                 log_file=a.log_file)
+                 log_file=a.log_file, cam_width=a.cam_width, cam_height=a.cam_height, cam_fps=a.cam_fps,
+                 cam_focus=a.cam_focus, cam_lens_position=a.cam_lens_position)
     cfg.password = load_password(a.password_file)
     if a.allow_network and a.host in (None, "0.0.0.0", "::"):
         print("CANH BAO: --allow-network ma khong chi --host (hoac --host 0.0.0.0): dang nghe MOI giao dien mang. "
@@ -78,7 +85,8 @@ def main(argv=None) -> int:
     from .sources import make_source
 
     try:
-        source = make_source(cfg.source, pace=cfg.pace, width=cfg.cam_width, height=cfg.cam_height, fps=cfg.cam_fps)
+        source = make_source(cfg.source, pace=cfg.pace, width=cfg.cam_width, height=cfg.cam_height, fps=cfg.cam_fps,
+                             focus=cfg.cam_focus, lens_position=cfg.cam_lens_position)
     except (ValueError, NotImplementedError) as e:
         print(f"LOI: {e}", file=sys.stderr)
         return 2

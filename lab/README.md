@@ -61,10 +61,19 @@ POST cần `Content-Type: application/json`, `Origin` (nếu có) phải trùng 
   Không có ứng viên thì giữ hành vi cũ (hết hạn thì bỏ khóa). Trạng thái `lock.state` = `tracking` (bám) | `searching` (đang tìm lại) |
   `reacquired` (vừa gán lại, 2 s) và `lock.reacquired` (số lần gán lại từ lúc khóa) có trong `/api/state`, trên hình và trên trang.
 
-## Chuyển sang Raspberry Pi 5 (chưa làm)
-- Thêm `Picamera2Source(FrameSource)`: `Picamera2().create_video_configuration(main={"size":(1280,720),"format":"RGB888"})`, `capture_array()` trả khung (RGB888 của picamera2 thực chất là BGR cho OpenCV), `live=True`.
-- `--hfov` cho Camera Module 3 Wide khoảng 102 độ (theo nhà sản xuất, CHƯA kiểm); góc rộng có méo ống kính, cần hiệu chỉnh nếu muốn góc chính xác.
+## Chạy trên Raspberry Pi 5 + Camera Module 3 (đã viết, CHƯA thử trên phần cứng)
+```
+sudo apt install python3-picamera2            # gói hệ thống, không cài bằng pip
+python3 -m venv --system-site-packages ~/venv-lab && ~/venv-lab/bin/pip install -r requirements.txt
+rpicam-hello --list-cameras                   # phải thấy imx708
+cd lab && ~/venv-lab/bin/python -m labview --source picamera2 --cam-width 1280 --cam-height 720 --cam-fps 30 --hfov 102
+```
+- `--focus infinity` (mặc định: lấy nét cố định ở vô cực) | `continuous` (tự lấy nét liên tục) | `manual --lens-position <diop>`.
+- Nguồn `labview/picam.py` (`Picamera2Source`): khung BGR, `queue=False` + 2 bộ đệm để luôn lấy khung mới nhất; thiếu thư viện hoặc không thấy camera thì báo lỗi rõ và thoát (mã 1).
+- Hiệu chuẩn (ảnh bàn cờ, OpenCV): `python tools/calibrate_camera.py --images <thư mục ảnh> --cols 9 --rows 6 --square-mm 25 --out camera.json`
+  ghi ma trận camera + hệ số méo, in sẵn `--fx --fy --cx --cy` (tính trên khung chưa thu nhỏ; nhân theo tỉ lệ nếu `--max-width` nhỏ hơn bề rộng khung).
 - Suy luận trên Pi 5 cần NCNN/ONNX thay `.pt`; tốc độ khung hình chưa đo.
+- `--hfov` cho Camera Module 3 Wide khoảng 102 độ (theo nhà sản xuất, CHƯA kiểm); góc rộng có méo ống kính, cần hiệu chỉnh nếu muốn góc chính xác.
 
 ## Dùng lại từ `AI-6` (chỉ đọc ý tưởng/mẫu)
 `YOLOv8/video_processor.py`: mô hình luồng camera/suy luận tách rời, `grab()+retrieve()` lấy khung mới nhất, mở V4L2 MJPG buffer 1; `frame_processor.py`: gọi `model.track(persist=True, bytetrack)`. `AI-6` không có mã picamera2 (chỉ comment V4L2). Không dùng `drone_tg\`.
