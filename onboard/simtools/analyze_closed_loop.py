@@ -5,7 +5,7 @@ Cua so do: bat dau khi muc tieu >= 90% toc do dat va chaser lan dau vao range +-
 events.json: t_ws), dai --window s.
 Tieu chi (kich ban none / blackout):
   - sai so TB |d - range| < tol (3 m) trong cua so; cua so du 120 s; muc tieu doi huong >= 2 lan trong cua so
-  - khoang cach that min >= 8 m tren TOAN BO du lieu (tu luc cat canh toi khi ca hai dung)
+  - khoang cach that min >= acceptance.hard_floor_m (app_cfg.json; thieu thi 8 m) tren TOAN BO du lieu (tu luc cat canh toi khi ca hai dung)
   - ty le thoi gian supervisor o TRACK >= 90% trong cua so (tu app_log.csv)
   - khoang trong du lieu truth toi da <= 0.2 s CHI trong cua so do (toan chuyen chi in tham khao), tan so ghi >= 10 Hz
   - app thoat 0 (app.rc)
@@ -13,7 +13,7 @@ Kich ban disengage: do do tre tu lenh doi mode toi luc app ngung gui lenh (<= 0.
 Ca CAM XUONG (events.json co t_dive_cmd; xem docs/scenario_dive.md) cham THEM:
   - events.json phai du t_go, t_dive_cmd, t_stop_target, dive_deg, dive_drop_m va both_stopped=true (thieu/false -> FAIL)
   - muc tieu thuc su ha >= 0.8 * dive_drop_m (SITL muc tieu khong am tham cat toc do xuong) VA toc do ha dinh >= 0.8 * speed*sin(dive_deg)
-  - pha cam (t_dive .. het cam + --dive-after s): d3 min >= range_min (config, 12.5 m), d3 max <= --dmax (40 m) tinh tu
+  - pha cam (t_dive .. het cam + --dive-after s): d3 min >= range_min (--range-min, else acceptance.dive_range_min_m, else guidance.range_min_m cua app_cfg.json, else 12.5 m), d3 max <= --dmax (40 m) tinh tu
     luc cam toi luc target stop; muc tieu ra khoi khung tong <= --out-max s (2 s); pha bay bang (het pha cam .. stop) cung <= --out-max
     (bao ca khoang lien tuc dai nhat va tong tu lenh cam toi het chuyen)
   - do cao chaser >= san an toan (config min_alt_m - 1 m) VA >= (do cao dich cua muc tieu sau cam - --alt-margin 10 m),
@@ -222,6 +222,15 @@ def cfg_guidance(out, key, fallback_attr):
     return float(getattr(GuidanceConfig(), fallback_attr))
 
 
+def cfg_acceptance(out, key):
+    """Gia tri acceptance.<key> tu app_cfg.json (JSON thua), khong co thi None."""
+    try:
+        v = json.load(open(os.path.join(out, "app_cfg.json"))).get("acceptance", {}).get(key)
+        return None if v is None else float(v)
+    except (OSError, ValueError):
+        return None
+
+
 def dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines):
     """Cham pha cam xuong (neu co t_dive_cmd) va pha giam toc/phanh cuoi. Xem docstring dau file."""
     t_dive, t_dive_end = dive_times(truth, ev)
@@ -235,7 +244,11 @@ def dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines):
     if t_stop is None:
         return
     spd = float(ev["speed"]) if ev.get("speed") is not None else a.speed     # toc do da luu trong events.json uu tien hon --speed
-    rmin = a.range_min if a.range_min is not None else cfg_guidance(a.out, "range_min_m", "range_min_m")
+    rmin = a.range_min
+    if rmin is None:
+        rmin = cfg_acceptance(a.out, "dive_range_min_m")
+    if rmin is None:
+        rmin = cfg_guidance(a.out, "range_min_m", "range_min_m")
     floor = a.alt_floor if a.alt_floor is not None else cfg_guidance(a.out, "min_alt_m", "min_alt_m") - 1.0
     if t_dive is not None:
         crit("hai may dung han o cuoi chuyen (both_stopped)", ev.get("both_stopped") is True,
@@ -386,7 +399,10 @@ def main():
     both_air = [i for i, r in enumerate(truth) if fl(r, "tgt_alt") >= 2.0 and fl(r, "ch_alt") >= 2.0]
     if both_air:
         lines.append("min d3 khi ca hai >= 2 m do cao = %.2f m" % min(D[i] for i in both_air))
-    crit("khong bao gio < 8 m (toan chuyen bay)", D[imin] >= 8.0, "min = %.2f m" % D[imin])
+    hard_floor = cfg_acceptance(a.out, "hard_floor_m")
+    if hard_floor is None:
+        hard_floor = 8.0
+    crit("khong bao gio < %g m (toan chuyen bay)" % hard_floor, D[imin] >= hard_floor,"min = %.2f m" % D[imin])
     crit("app thoat code 0", app_rc == 0, "app.rc = %s" % app_rc)
     abort_n = sum(1 for r in app if r.get("state") == "abort")
     lines.append("so chu ky app o ABORT = %d" % abort_n)

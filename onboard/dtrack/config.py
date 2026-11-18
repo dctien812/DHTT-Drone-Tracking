@@ -117,6 +117,13 @@ class TargetShapeConfig:
 
 
 @dataclass
+class AcceptanceConfig:
+    """Nguong cham nghiem thu mo phong (chi tai lieu: simtools/analyze_closed_loop.py doc JSON thua app_cfg.json)."""
+    hard_floor_m: float = 8.0         # m, khoang cach that khong bao gio nho hon
+    dive_range_min_m: float = 12.5    # m, can duoi d3 trong pha cam va pha giam toc cuoi
+
+
+@dataclass
 class AppConfig:
     loop_hz: float = 30.0
     brake_on_exit_s: float = 15.0   # s, toi da phanh tuong minh khi ket thuc truoc khi thoat
@@ -128,6 +135,7 @@ class AppConfig:
     mavlink: MavlinkConfig = field(default_factory=MavlinkConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     target_shape: TargetShapeConfig = field(default_factory=TargetShapeConfig)
+    acceptance: AcceptanceConfig = field(default_factory=AcceptanceConfig)
 
     def __post_init__(self) -> None:
         # goc camera chi nhap mot noi (camera); guidance dung cung gia tri
@@ -166,6 +174,12 @@ def validate(cfg: AppConfig) -> None:
         v = getattr(cfg.target_shape, name)
         if not (math.isfinite(v) and v > 0):
             raise ValueError("target_shape.%s phai > 0" % name)
+    for name in ("hard_floor_m", "dive_range_min_m"):
+        v = getattr(cfg.acceptance, name)
+        if not (math.isfinite(v) and v > 0):
+            raise ValueError("acceptance.%s phai > 0" % name)
+    if cfg.acceptance.hard_floor_m > cfg.acceptance.dive_range_min_m:
+        raise ValueError("acceptance.hard_floor_m phai <= dive_range_min_m")
     if cfg.loop_hz <= 0 or s.loop_slow_s <= 0:
         raise ValueError("loop_hz / loop_slow_s phai > 0")
     if cfg.mavlink.resend_hz < 10.0:
@@ -206,6 +220,10 @@ PROFILES: Dict[str, Dict[str, Any]] = {
         "target_shape": {"span_m": 2.16, "length_m": 1.50, "height_m": 0.65},
     },
 }
+# giu 15 m (nguoi dung chot), nguong thap nhat 6-8 m: accept_plane_r25 + guidance moi + nguong cham theo ho so
+PROFILES["accept_plane_r15"] = json.loads(json.dumps(PROFILES["accept_plane_r25"]))
+PROFILES["accept_plane_r15"]["guidance"].update({"range_set_m": 15.0, "range_back_m": 10.0, "range_min_m": 8.0})
+PROFILES["accept_plane_r15"]["acceptance"] = {"hard_floor_m": 6.0, "dive_range_min_m": 6.0}
 
 
 def profile_dict(name: str) -> Dict[str, Any]:

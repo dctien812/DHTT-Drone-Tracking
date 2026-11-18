@@ -85,6 +85,7 @@ Phép đổi lat/lon → mét dùng trắc địa WGS84 theo vĩ độ (`mavlink
 | `guidance.min_alt_m` | 10 | độ cao tối thiểu so với home EKF |
 | `camera.tilt_up_deg` | 15 | góc ngẩng camera so với trục mũi |
 | `target_shape.span_m` / `length_m` / `height_m` | 0.30 / 0.30 / 0.30 m | hộp bao mục tiêu: sải cánh / thân / cao. `span_m` cũng là kích thước bộ ước lượng khoảng cách và nguồn mô phỏng dùng (một nguồn). Hồ sơ `accept_plane_r25` = `accept_gimbal_r25` + (2.16, 1.50, 0.65); hộp bao nên bbox lớn hơn hình thật ở góc chéo, ước lượng khoảng cách lệch theo hướng nhìn (từ sau ~0.97, ngang ~1.38, chéo 45° ~0.84) |
+| `acceptance.hard_floor_m` / `dive_range_min_m` | 8 / 12.5 m | ngưỡng chấm nghiệm thu mô phỏng (sàn cứng toàn chuyến / cận dưới pha cắm và giảm tốc cuối), bộ chấm đọc từ `app_cfg.json`. Hồ sơ `accept_plane_r15` = `accept_plane_r25` + giữ 15 m (`range_back_m` 10, `range_min_m` 8) + ngưỡng 6 / 6 m |
 | `camera.fx, fy` | 1739 px | lens 6 mm (≈ 45°×35°); lens 8 mm: 2319 (≈ 35°×26°, quá hẹp cho camera cố định) |
 | `supervisor.coast_follow_s` | 4 s | bay tiếp (COAST) tối đa khi mất mục tiêu, rồi phanh |
 | `supervisor.lost_rtl_s`, `rtl_on_lost` | 10 s, bật | không có mục tiêu quá lâu → RTL |
