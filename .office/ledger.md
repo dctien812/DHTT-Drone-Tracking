@@ -325,3 +325,8 @@
 - Phân xử: ca mũi chúi 25° nhìn từ chính sau = 155,34×85,12 px (07 đúng; số 172,64×73,47 của 08 là ca camera ở trên, 08 xác nhận).
 - Mức Nhỏ ghi sổ: qua ngưỡng 1 m/s bbox nhảy (h 46,6 → 150,3 px), r nhảy ~+3% (0,77 m ở 25 m), không có độ trễ ở ngưỡng; `disengage:soft` không được chấm pha cuối (bộ chấm return sớm); `both_stopped` chỉ chấm ở ca cắm; `test_target_shape.py:311` còn dung sai 6%.
 - Chưa kiểm chứng: chạy SITL với hồ sơ `accept_plane_r25` và ca soft → giao 07.
+
+## 2026-11-18 · TẠM DỪNG theo yêu cầu người dùng (chuyển sang phiên mới, bộ máy agent tinh gọn hơn)
+- Trưởng phòng đặt `onboard/simtools/out/_STOP`; lô hồ sơ máy bay dừng sau lần 1/6 (dive15 seed 1 PASS, `out/20261118_090641_10ms_s1_none`; ước lượng khoảng cách TB −0,75 m, cần xem lại). Còn 5 lần chưa chạy. `pgrep arducopter` trống.
+- Bước 2: 07 viết 38 test hình học khớp (đỏ đúng lý do, chưa rà); file để ở `onboard/tests/test_gimbal_geometry.py.wip` cho tới khi làm tiếp.
+- Ghi đè `.office/checkpoint.md` (trạng thái, phương án đã chốt, bước tiếp theo). Không còn agent hay mô phỏng nào chạy.

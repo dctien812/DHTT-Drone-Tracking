@@ -1,0 +1,204 @@
+"""Test PHA DO cho hinh hoc khop gat chu dong (dtrack/gimbal.py).
+
+Ky vong doc lap: ma tran xoay dung tay bang numpy (Rz*Ry*Rx) va quaternion dung tay tu truc-goc,
+KHONG dung quat_from_euler/quat_to_matrix cua du an cho gia tri ky vong.
+Quy uoc (theo dtrack/geometry.py:3-6,57-62): quaternion (w,x,y,z), than FRD -> NED;
+pitch Euler duong = mui LEN. "Mui chui xuong theta" cua giao viec  <=>  pitch Euler = -theta.
+Truc quang trong than = (sin d, 0, -cos d); camera attitude: truc x (tien) cua camera = boresight.
+"""
+import math
+import os
+import sys
+
+import numpy as np
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+D = math.radians
+
+
+# ---------------- ky vong doc lap ----------------
+def _rx(a):
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+
+def _ry(a):
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+
+def _rz(a):
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
+def _qaxis(axis, a):
+    return np.array([math.cos(a / 2), *(math.sin(a / 2) * np.array(axis, float))])
+
+
+def _qmul(a, b):
+    aw, av = a[0], a[1:]
+    bw, bv = b[0], b[1:]
+    return np.array([aw * bw - av @ bv, *(aw * bv + bw * av + np.cross(av, bv))])
+
+
+def body_quat(theta_down=0.0, roll=0.0, yaw=0.0):
+    """q than->NED: yaw quanh z, roi pitch quanh y (= -theta_down), roi roll quanh x."""
+    q = _qmul(_qmul(_qaxis((0, 0, 1), yaw), _qaxis((0, 1, 0), -theta_down)), _qaxis((1, 0, 0), roll))
+    return tuple(float(c) for c in q)
+
+
+def rot_body(theta_down=0.0, roll=0.0, yaw=0.0):
+    return _rz(yaw) @ _ry(-theta_down) @ _rx(roll)
+
+
+def mat_from_q(q):
+    w, x, y, z = q
+    n = math.sqrt(w * w + x * x + y * y + z * z)
+    w, x, y, z = w / n, x / n, y / n, z / n
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
+
+
+def bore_exp(d):
+    return np.array([math.sin(d), 0.0, -math.cos(d)])
+
+
+def elev_of(v):
+    return math.asin(max(-1.0, min(1.0, -v[2])))   # NED: z xuong
+
+
+# ---------------- (0) re-export ----------------
+def test_euler_from_quat_reexport_same_function():
+    from dtrack.geometry import euler_from_quat as a
+    from simtools.gimbal_model import euler_from_quat as b
+    assert a is b
+    r, p, y = a(body_quat(D(10), D(20), D(30)))
+    assert (r, p, y) == pytest.approx((D(20), -D(10), D(30)), abs=1e-9)
+
+
+# ---------------- (1) boresight_body ----------------
+@pytest.mark.parametrize("deg,exp", [(90, (1, 0, 0)), (10, (math.sin(D(10)), 0, -math.cos(D(10)))),
+                                      (45, (math.sqrt(.5), 0, -math.sqrt(.5)))])
+def test_boresight_body_vector_and_unit(deg, exp):
+    from dtrack.gimbal import boresight_body
+    v = np.array(boresight_body(D(deg)), float)
+    assert v.shape == (3,)
+    assert v == pytest.approx(exp, abs=1e-12)
+    assert np.linalg.norm(v) == pytest.approx(1.0, abs=1e-12)
+
+
+def test_limits_constants():
+    from dtrack.gimbal import DELTA_MAX_RAD, DELTA_MIN_RAD
+    assert DELTA_MIN_RAD == pytest.approx(D(10)) and DELTA_MAX_RAD == pytest.approx(D(90))
+
+
+# ---------------- (2) nam bang, delta=90 -> ngang huong mui ----------------
+@pytest.mark.parametrize("yaw_deg", [0, 90, -135])
+def test_level_body_delta90_looks_horizontal_along_yaw(yaw_deg):
+    from dtrack.gimbal import camera_attitude
+    R = mat_from_q(camera_attitude(body_quat(0, 0, D(yaw_deg)), D(90)))
+    fwd = R[:, 0]
+    assert fwd == pytest.approx((math.cos(D(yaw_deg)), math.sin(D(yaw_deg)), 0.0), abs=1e-9)
+
+
+# ---------------- camera_attitude: day du 3 truc, khong them roll ----------------
+@pytest.mark.parametrize("theta,roll,yaw,delta", [(0, 0, 0, 45), (30, 20, 70, 72), (60, 35, -135, 30), (10, -25, 200, 10)])
+def test_camera_attitude_equals_body_times_pitch_joint(theta, roll, yaw, delta):
+    from dtrack.gimbal import camera_attitude
+    Rb = rot_body(D(theta), D(roll), D(yaw))
+    R_exp = Rb @ _ry(D(90 - delta))      # quay quanh y than: x -> (sin d, 0, -cos d)
+    R = mat_from_q(camera_attitude(body_quat(D(theta), D(roll), D(yaw)), D(delta)))
+    assert R == pytest.approx(R_exp, abs=1e-9)
+
+
+def test_camera_attitude_returns_unit_quaternion():
+    from dtrack.gimbal import camera_attitude
+    q = np.array(camera_attitude(body_quat(D(30), D(20), D(40)), D(60)), float)
+    assert q.shape == (4,) and np.linalg.norm(q) == pytest.approx(1.0, abs=1e-9)
+
+
+# ---------------- (3) vong khep kin ----------------
+def test_closed_loop_grid():
+    from dtrack.gimbal import camera_attitude, elev_to_delta
+    unsat = 0
+    for th in (0, 12, 30, 60, 80):
+        for ro in (0, 20, 35):
+            for yaw in (0.0, D(77), D(-150)):
+                for el_deg in (0, -12, -15, -40):
+                    q = body_quat(D(th), D(ro), yaw)
+                    delta, sat = elev_to_delta(q, D(el_deg))
+                    assert math.isfinite(delta) and D(10) - 1e-12 <= delta <= D(90) + 1e-12
+                    if sat:
+                        continue
+                    unsat += 1
+                    fwd = mat_from_q(camera_attitude(q, delta))[:, 0]
+                    assert abs(elev_of(fwd) - D(el_deg)) < D(0.1), (th, ro, yaw, el_deg)
+    assert unsat >= 20     # luoi phai co du ca khong bao hoa, tranh test rong
+
+
+# ---------------- (4) bang tinh tay, khong roll ----------------
+@pytest.mark.parametrize("th,el,exp", [(30, -12, 72), (60, -12, 42), (78, -12, 24), (90, -12, 12)])
+def test_hand_table_no_roll(th, el, exp):
+    from dtrack.gimbal import elev_to_delta
+    delta, sat = elev_to_delta(body_quat(D(th)), D(el))
+    assert sat is False
+    assert math.degrees(delta) == pytest.approx(exp, abs=1e-6)
+
+
+# ---------------- (5) bao hoa ----------------
+@pytest.mark.parametrize("th,el,exp", [(0, -12, 90), (85, 0, 10)])
+def test_saturation_no_roll(th, el, exp):
+    from dtrack.gimbal import elev_to_delta
+    delta, sat = elev_to_delta(body_quat(D(th)), D(el))
+    assert sat is True
+    assert math.degrees(delta) == pytest.approx(exp, abs=1e-6)
+
+
+def test_custom_limits_respected():
+    from dtrack.gimbal import elev_to_delta
+    delta, sat = elev_to_delta(body_quat(D(30)), D(-12), delta_min=D(20), delta_max=D(60))
+    assert sat is True and math.degrees(delta) == pytest.approx(60, abs=1e-6)
+
+
+# ---------------- (6) roll lon, ngoai tam ----------------
+@pytest.mark.parametrize("el,exp", [(-40, 90), (40, 10)])
+def test_unreachable_with_large_roll_returns_nearest_limit(el, exp):
+    # theta=0, roll=80: el(delta) = asin(cos80 * cos delta) trong [0, 9.8 do] voi delta in [10,90]
+    from dtrack.gimbal import elev_to_delta
+    delta, sat = elev_to_delta(body_quat(0.0, D(80), D(20)), D(el))
+    assert sat is True
+    assert math.isfinite(delta) and math.degrees(delta) == pytest.approx(exp, abs=1e-6)
+
+
+# ---------------- (7) NaN / inf -> ValueError (tien le: quat_normalize ném ValueError, geometry.py:26) ----------------
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_inputs_raise_value_error(bad):
+    from dtrack.gimbal import boresight_body, camera_attitude, elev_to_delta
+    q = body_quat(D(20), D(10), D(30))
+    with pytest.raises(ValueError):
+        boresight_body(bad)
+    with pytest.raises(ValueError):
+        camera_attitude(q, bad)
+    with pytest.raises(ValueError):
+        camera_attitude((bad, 0.0, 0.0, 0.0), D(45))
+    with pytest.raises(ValueError):
+        elev_to_delta(q, bad)
+    with pytest.raises(ValueError):
+        elev_to_delta((1.0, bad, 0.0, 0.0), D(-10))
+
+
+# ---------------- (8) azimuth ----------------
+@pytest.mark.parametrize("yaw_deg", [0, 33, -135, 170])
+@pytest.mark.parametrize("theta", [0, 25, 60])
+def test_azimuth_in_vertical_plane_of_body_x_when_no_roll(yaw_deg, theta):
+    from dtrack.gimbal import camera_attitude
+    yaw = D(yaw_deg)
+    for deg in range(10, 91, 10):
+        fwd = mat_from_q(camera_attitude(body_quat(D(theta), 0.0, yaw), D(deg)))[:, 0]
+        in_yaw_frame = _rz(-yaw) @ fwd
+        assert abs(in_yaw_frame[1]) < 1e-9      # khong lech ngang khoi mat phang (x_yaw, z)
