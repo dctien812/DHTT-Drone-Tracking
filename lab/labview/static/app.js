@@ -50,12 +50,14 @@ function render(s) {
     lb.textContent = "Chưa khóa\nĐang thấy " + s.tracks.length + " vật thể";
   } else if (!L.visible) {
     lb.className = "lost";
-    lb.textContent = `Đang khóa ID ${L.track_id}\nMẤT DẤU ${L.lost_for_s} s (sẽ tự bỏ khóa)`;
+    lb.textContent = `Đang khóa ID ${L.track_id}\nĐANG TÌM LẠI ${L.lost_for_s} s (hết hạn sẽ tự bỏ khóa)\nĐã gán lại: ${L.reacquired} lần`;
   } else {
     lb.className = "on";
     const dist = L.distance_m == null ? "n/a" : L.distance_m + " m";
+    const st = L.state === "reacquired" ? "ĐÃ GÁN LẠI" : "BÁM";
     lb.textContent =
       `ĐANG KHÓA ID ${L.track_id}  (tin cậy ${L.conf})\n` +
+      `Trạng thái: ${st} · đã gán lại ${L.reacquired} lần\n` +
       `Lệch ngang: ${L.yaw_deg > 0 ? "+" : ""}${L.yaw_deg}° (+ = phải)\n` +
       `Lệch dọc: ${L.pitch_deg > 0 ? "+" : ""}${L.pitch_deg}° (+ = lên)\n` +
       `Khoảng cách ước lượng: ${dist}\n` +

@@ -19,7 +19,7 @@ import numpy as np
 from . import geometry, overlay
 from .config import Config
 from .detector import Detector
-from .lock import LockManager, LockStatus, Track
+from .lock import LockManager, LockStatus, ReacquireParams, Track
 from .outputs import LockReport, LockSink
 from .sources import Frame, FrameSource
 
@@ -37,7 +37,9 @@ class Pipeline:
         self.source, self.detector, self.cfg = source, detector, cfg
         self.sinks = list(sinks)
         self.events: collections.deque = collections.deque(maxlen=30)
-        self.lock = LockManager(cfg.lost_timeout_s, on_event=self._on_event)
+        self.lock = LockManager(cfg.lost_timeout_s, on_event=self._on_event,
+                                reacquire=ReacquireParams(cfg.reacquire, cfg.reacq_gate, cfg.reacq_gate_per_s,
+                                                          cfg.reacq_size_min, cfg.reacq_size_max))
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         # khung mới nhất giữa hai luồng
@@ -45,6 +47,7 @@ class Pipeline:
         self._slot: Optional[Frame] = None
         self._pending_reset = False
         self._ended = False
+        self._done = False   # nguồn hết VÀ khung cuối đã xử lý xong
         # kết quả công bố
         self._pub_cv = threading.Condition()
         self._seq = 0
@@ -93,6 +96,10 @@ class Pipeline:
     def stopping(self) -> bool:
         return self._stop.is_set()
 
+    @property
+    def done(self) -> bool:
+        return self._done
+
     # ------------------------------------------------------------ sự kiện
     def _on_event(self, msg: str) -> None:
         ts = dt.datetime.now().astimezone().isoformat(timespec="milliseconds")
@@ -138,6 +145,7 @@ class Pipeline:
 
     def _publish_state_only(self) -> None:
         with self._pub_cv:
+            self._done = True
             self._state = dict(self._state, ended=True, running=False)
             self._seq += 1
             self._pub_cv.notify_all()
@@ -173,7 +181,7 @@ class Pipeline:
                 s.on_lock(report)
             except Exception:
                 log.exception("sink loi")
-        overlay.draw(img, tracks, status.track_id if status.active else None, k.cx, k.cy)
+        overlay.draw(img, tracks, status.track_id if status.active else None, k.cx, k.cy, status)
         ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, self.cfg.jpeg_quality])
         if not ok:
             return
@@ -206,7 +214,7 @@ class Pipeline:
         if st.active:
             lock.update(track_id=st.track_id, since_s=round(now - st.since, 1),
                         visible=st.track is not None, lost_for_s=round(st.lost_for_s, 1),
-                        assumed_width_m=self.cfg.real_width_m)
+                        assumed_width_m=self.cfg.real_width_m, state=st.state, reacquired=st.reacquired)
             if rep:
                 lock.update(yaw_deg=round(rep.yaw_deg, 2), pitch_deg=round(rep.pitch_deg, 2),
                             distance_m=None if rep.distance_m is None else round(rep.distance_m, 1),
@@ -241,7 +249,7 @@ class Pipeline:
 
     def wait_frame(self, last_seq: int, timeout: float = 2.0) -> tuple[int, Optional[bytes]]:
         with self._pub_cv:
-            if self._seq == last_seq and not self._stop.is_set():
+            if self._seq == last_seq and not self._stop.is_set() and not self._done:
                 self._pub_cv.wait(timeout=timeout)
             return self._seq, self._jpeg
 

@@ -1,5 +1,7 @@
 import base64
 import math
+import os
+import socket
 
 import numpy as np
 import pytest
@@ -203,4 +205,145 @@ def test_main_password_from_env_and_file(monkeypatch, tmp_path):
     monkeypatch.delenv("LABVIEW_PASSWORD")
     f = tmp_path / "pw.txt"
     f.write_text(PW + "\n")
+    f.chmod(0o600)
     assert parse(["--source", "file:x", "--allow-network", "--password-file", str(f)]).password == PW
+
+
+# ---------------- (A) giới hạn tổng, mật khẩu, file mật khẩu
+def ip(n):
+    return {"REMOTE_ADDR": n}
+
+
+def get(c, hdr=None, addr="127.0.0.1", path="/api/state"):
+    return c.get(path, headers=hdr or {}, environ_overrides=ip(addr))
+
+
+def test_global_limit_across_many_ips_and_owner_still_gets_in():
+    c, *_ = build(password=PW, allow_network=True)
+    lim = c.application.extensions["labview.limiter"]
+    now = [1000.0]
+    lim.clock = lambda: now[0]
+    assert get(c, auth(), "10.9.9.9").status_code == 200           # chủ đăng nhập đúng trước khi bị dò
+    for i in range(20):                                              # 20 IP khác nhau, mỗi IP chỉ 1 lần sai
+        assert get(c, auth("guess-%02d-xxxxxx" % i), "10.0.0.%d" % i).status_code == 401
+    assert get(c, auth("guess-xx-xxxxxx"), "10.0.1.1").status_code == 429      # IP mới, sai: 429
+    assert get(c, None, "10.0.1.2").status_code == 429                           # chưa xác thực: 429
+    assert get(c, auth(), "10.0.1.3").status_code == 429                         # IP lạ nhập ĐÚNG vẫn 429 (không thành máy dò)
+    assert get(c, auth(), "10.9.9.9").status_code == 200                         # chủ (IP đã tin cậy) vẫn vào được
+    assert get(c, auth("wrong-wrong-wrong"), "10.9.9.9").status_code == 429     # nhưng sai thì vẫn 429
+    now[0] += 61
+    assert get(c, auth("wrong-wrong-wrong"), "10.0.1.4").status_code == 401     # hết 60 s: mở lại
+    assert get(c, auth(), "10.0.1.3").status_code == 200
+
+
+def test_owner_not_locked_out_by_own_typos():
+    c, *_ = build(password=PW, allow_network=True)
+    assert get(c, auth()).status_code == 200
+    for _ in range(5):
+        assert get(c, auth("typo-typo-typo")).status_code == 401
+    assert get(c, auth("typo-typo-typo")).status_code == 429
+    assert get(c, auth()).status_code == 200                                       # trước đây: 429
+
+
+def test_password_min_length_12():
+    with pytest.raises(ConfigError):
+        validate(Config(allow_network=True, password="a" * 11))
+    validate(Config(allow_network=True, password="a" * 12))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="quyền kiểu Unix")
+def test_password_file_must_not_be_group_or_world_readable(tmp_path):
+    from labview.config import load_password
+    f = tmp_path / "pw.txt"
+    f.write_text(PW + "\n")
+    f.chmod(0o644)
+    with pytest.raises(ConfigError):
+        load_password(str(f))
+    f.chmod(0o640)
+    with pytest.raises(ConfigError):
+        load_password(str(f))
+    f.chmod(0o600)
+    assert load_password(str(f)) == PW
+    f.chmod(0o400)
+    assert load_password(str(f)) == PW
+
+
+# ---------------- (C) tiêu đề Host ở chế độ mạng
+def test_network_mode_host_allowlist():
+    c, *_ = build(password=PW, allow_network=True)
+    assert c.get("/api/state", headers={**auth(), "Host": "evil.example"}).status_code == 403
+    assert c.get("/api/state", headers={**auth(), "Host": "evil.example:8080"}).status_code == 403
+    assert c.get("/api/state", headers={**auth(), "Host": "[::1"}).status_code == 403
+    assert c.get("/api/state", headers={**auth(), "Host": "localhost:8080"}).status_code == 200
+    assert c.get("/api/state", headers={**auth(), "Host": socket.gethostname()}).status_code == 200
+    assert c.get("/api/state", headers={"Host": "evil.example"}).status_code == 403   # 403 trước cả yêu cầu xác thực
+
+
+def test_allowed_hosts_defaults_and_extra():
+    cfg = validate(Config(allow_network=True, password=PW, host="192.168.1.50", allowed_hosts=["Lab.Local"]))
+    assert {"192.168.1.50", "localhost", socket.gethostname().lower(), "lab.local"} <= set(cfg.allowed_hosts)
+    cfg = validate(Config(allow_network=True, password=PW))  # nghe mọi giao diện: 0.0.0.0 không phải tên khách gõ
+    assert "0.0.0.0" not in cfg.allowed_hosts and "localhost" in cfg.allowed_hosts
+    c, *_ = build(password=PW, allow_network=True, host="192.168.1.50", allowed_hosts=["lab.local"])
+    for h, code in (("192.168.1.50:8080", 200), ("lab.local", 200), ("192.168.1.51", 403)):
+        assert c.get("/api/state", headers={**auth(), "Host": h}).status_code == code
+
+
+def test_warn_when_allow_network_without_host(monkeypatch, capsys):
+    from labview.__main__ import parse
+    monkeypatch.setenv("LABVIEW_PASSWORD", PW)
+    parse(["--source", "file:x", "--allow-network"])
+    assert "--host" in capsys.readouterr().err
+    parse(["--source", "file:x", "--allow-network", "--host", "192.168.1.50"])
+    assert capsys.readouterr().err == ""
+
+
+def test_password_file_rejected_by_main(monkeypatch, tmp_path, capsys):
+    if os.name != "posix":
+        pytest.skip("quyền kiểu Unix")
+    monkeypatch.delenv("LABVIEW_PASSWORD", raising=False)
+    f = tmp_path / "pw.txt"
+    f.write_text(PW)
+    f.chmod(0o644)
+    assert main(["--source", "file:x.mp4", "--allow-network", "--password-file", str(f)]) == 2
+    assert "chmod 600" in capsys.readouterr().err
+
+
+# ---------------- (B) luồng MJPEG trả lại chỗ
+def test_stream_slots_released_when_source_ended():
+    c, pipe, *_ = build(max_stream_clients=2)
+    pipe._done = True  # nguồn hết, khung cuối đã công bố
+    for _ in range(6):  # nhiều hơn số chỗ tối đa: nếu rò chỗ thì lần 3 trở đi nhận 503
+        r = c.get("/stream.mjpg")
+        assert r.status_code == 200 and r.data.count(b"--frame") == 1
+
+
+def test_stream_resends_last_frame_and_frees_slot_on_disconnect(monkeypatch):
+    monkeypatch.setattr("labview.server._STREAM_RESEND_S", 0.05)
+    c, pipe, *_ = build(max_stream_clients=1)
+    for _ in range(4):  # nguồn "đứng" (không hết, không khung mới): người xem ngắt rồi mở lại
+        r = c.get("/stream.mjpg", buffered=False)
+        assert r.status_code == 200
+        it = iter(r.response)
+        chunks = [next(it) for _ in range(3)]
+        assert all(b"--frame" in ch and b"\xff\xd8" in ch for ch in chunks) and chunks[0] == chunks[2]
+        r.close()
+
+
+def test_state_reports_reacquired_lock_through_pipeline():
+    c, pipe, det, _ = build()
+    now = [10.0]
+    pipe.lock._clock = lambda: now[0]
+    c.post("/api/lock", json={"track_id": 7})
+    fr = lambda i: Frame(np.zeros((480, 640, 3), np.uint8), 0.0, i)
+    det.tracks = []                       # ID 7 biến mất
+    now[0] += 0.1
+    pipe.process_frame(fr(1))
+    L = c.get("/api/state").get_json()["lock"]
+    assert L["active"] and L["visible"] is False and L["state"] == "searching" and L["reacquired"] == 0
+    det.tracks = [Track(20, (301.0, 201.0, 341.0, 231.0), 0.7)]  # ID mới ngay vị trí cũ
+    now[0] += 0.1
+    pipe.process_frame(fr(2))
+    L = c.get("/api/state").get_json()["lock"]
+    assert L["track_id"] == 20 and L["visible"] and L["state"] == "reacquired" and L["reacquired"] == 1
+    assert c.get("/snapshot.jpg").data[:2] == b"\xff\xd8"

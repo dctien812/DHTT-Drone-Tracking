@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_WEIGHTS = str(REPO / "vision" / "weights" / "ft_v8n_best.pt")
-MIN_PASSWORD_LEN = 8
+MIN_PASSWORD_LEN = 12
 PASSWORD_ENV = "LABVIEW_PASSWORD"
 
 
@@ -33,6 +34,11 @@ class Config:
     cy: Optional[float] = None
     real_width_m: float = 0.30
     lost_timeout_s: float = 2.0
+    reacquire: bool = True          # tự gán lại khóa cho track mới khi ID đang khóa biến mất
+    reacq_gate: float = 1.5         # cổng khoảng cách cơ bản, tính theo cạnh lớn của khung bao cuối
+    reacq_gate_per_s: float = 2.0   # cổng nở thêm bấy nhiêu "cạnh khung bao" cho mỗi giây mất dấu
+    reacq_size_min: float = 0.5     # tỉ lệ bề rộng (mới / cuối) tối thiểu
+    reacq_size_max: float = 2.0     # tỉ lệ bề rộng (mới / cuối) tối đa
     click_margin_px: float = 12.0
     loop: bool = True
     pace: bool = True
@@ -45,6 +51,7 @@ class Config:
     allow_network: bool = False
     password: Optional[str] = field(default=None, repr=False)
     max_stream_clients: int = 4
+    allowed_hosts: list = field(default_factory=list)  # tiêu đề Host cho phép ở chế độ mạng (thêm vào mặc định)
     log_file: Optional[str] = None
 
 
@@ -63,6 +70,8 @@ def load_password(password_file: Optional[str]) -> Optional[str]:
         p = Path(password_file).expanduser()
         if not p.is_file():
             raise ConfigError("Khong doc duoc file mat khau")
+        if os.name == "posix" and (p.stat().st_mode & 0o077):
+            raise ConfigError("File mat khau nhom/nguoi khac doc duoc: chay chmod 600 <file>")
         pw = p.read_text(encoding="utf-8").strip()
         return pw or None
     return os.environ.get(PASSWORD_ENV) or None
@@ -79,12 +88,19 @@ def validate(cfg: Config) -> Config:
             raise ConfigError(f"Che do mang can mat khau: dat bien moi truong {PASSWORD_ENV} hoac dung --password-file")
         if len(cfg.password) < MIN_PASSWORD_LEN:
             raise ConfigError(f"Mat khau toi thieu {MIN_PASSWORD_LEN} ky tu")
+        hosts = {h.strip().lower() for h in cfg.allowed_hosts if h and h.strip()}
+        hosts |= {"localhost", socket.gethostname().lower()}
+        if cfg.host not in ("0.0.0.0", "::"):  # địa chỉ "nghe mọi giao diện" không phải tên mà khách gõ
+            hosts.add(cfg.host.lower())
+        cfg.allowed_hosts = sorted(hosts)
     if not (1 <= cfg.port <= 65535):
         raise ConfigError("port khong hop le")
     if not (0.0 <= cfg.conf <= 1.0):
         raise ConfigError("conf phai trong [0,1]")
     if cfg.real_width_m <= 0 or cfg.lost_timeout_s <= 0:
         raise ConfigError("real_width_m va lost_timeout_s phai > 0")
+    if cfg.reacq_gate <= 0 or cfg.reacq_gate_per_s < 0 or not (0 < cfg.reacq_size_min <= 1.0 <= cfg.reacq_size_max):
+        raise ConfigError("reacq: gate > 0, gate_per_s >= 0, 0 < size_min <= 1 <= size_max")
     if not (1 <= cfg.jpeg_quality <= 100):
         raise ConfigError("jpeg_quality phai trong [1,100]")
     cfg.threads = max(1, min(cfg.threads, 8))

@@ -28,24 +28,57 @@ _ASSETS = {  # đường dẫn cố định -> (tên file, content-type)
 CSP = ("default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 AUTH_USER = "lab"
-_FAIL_LIMIT, _FAIL_WINDOW = 5, 60.0
+_FAIL_LIMIT, _FAIL_WINDOW = 5, 60.0          # theo từng IP
+_GLOBAL_FAIL_LIMIT, _GLOBAL_BLOCK_S = 20, 60.0  # tổng cho cả máy chủ: 20 lần sai/phút -> khóa 60 s
+_TRUST_TTL, _TRUST_MAX = 3600.0, 64          # IP đã đăng nhập đúng gần đây (chủ máy) vẫn vào được khi đang khóa
+_STREAM_RESEND_S = 2.0                       # không có khung mới: gửi lại khung cuối chu kỳ này
 
 
 class _FailLimiter:
-    def __init__(self):
+    """Giới hạn đoán mật khẩu: theo từng IP và TỔNG cho cả máy chủ (chống đổi IP).
+    Khi đang khóa chỉ IP "tin cậy" (đã nhập ĐÚNG gần đây) mới được vào bằng mật khẩu đúng; IP lạ
+    luôn nhận 429 dù đúng hay sai, để 429 không thành "máy dò" mật khẩu (nếu cho mọi mật khẩu đúng qua
+    thì kẻ dò cứ thử tiếp: sai nhận 429, đúng nhận 200, giới hạn thành vô nghĩa)."""
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
         self._mu = threading.Lock()
         self._fails: dict[str, list[float]] = {}
+        self._all: list[float] = []
+        self._global_until = 0.0
+        self._trusted: dict[str, float] = {}
 
     def blocked(self, ip: str) -> bool:
         with self._mu:
-            now = time.monotonic()
+            now = self.clock()
             lst = [t for t in self._fails.get(ip, []) if now - t < _FAIL_WINDOW]
-            self._fails[ip] = lst
-            return len(lst) >= _FAIL_LIMIT
+            if lst:
+                self._fails[ip] = lst
+            else:
+                self._fails.pop(ip, None)
+            return len(lst) >= _FAIL_LIMIT or now < self._global_until
 
     def add(self, ip: str) -> None:
         with self._mu:
-            self._fails.setdefault(ip, []).append(time.monotonic())
+            now = self.clock()
+            self._fails.setdefault(ip, []).append(now)
+            self._all = [t for t in self._all if now - t < _FAIL_WINDOW] + [now]
+            if len(self._all) >= _GLOBAL_FAIL_LIMIT:
+                self._global_until, self._all = now + _GLOBAL_BLOCK_S, []
+
+    def trust(self, ip: str) -> None:
+        with self._mu:
+            now = self.clock()
+            self._trusted[ip] = now
+            if len(self._trusted) > _TRUST_MAX:
+                self._trusted = {k: v for k, v in self._trusted.items() if now - v < _TRUST_TTL}
+                while len(self._trusted) > _TRUST_MAX:
+                    self._trusted.pop(min(self._trusted, key=self._trusted.get))
+
+    def is_trusted(self, ip: str) -> bool:
+        with self._mu:
+            t = self._trusted.get(ip)
+            return t is not None and self.clock() - t < _TRUST_TTL
 
 
 def _num(v, lo, hi):
@@ -63,7 +96,9 @@ def create_app(pipe: Pipeline, cfg: Config) -> Flask:
     limiter = _FailLimiter()
     clients = {"n": 0}
     clients_mu = threading.Lock()
+    app.extensions["labview.limiter"] = limiter
     loopback_only = not cfg.allow_network and is_loopback(cfg.host or "127.0.0.1")
+    allowed_hosts = {h.lower() for h in cfg.allowed_hosts}
 
     def _deny(code, msg, headers=None):
         r = jsonify(error=msg)
@@ -75,13 +110,15 @@ def create_app(pipe: Pipeline, cfg: Config) -> Flask:
     @app.before_request
     def _guard():
         ip = request.remote_addr or "?"
-        if loopback_only:  # chống DNS rebinding khi chỉ nghe localhost
-            host = urlsplit("//" + request.host).hostname
-            if host not in ("localhost", "127.0.0.1", "::1"):
-                return _deny(403, "host khong hop le")
+        # chống DNS rebinding: chỉ nghe localhost -> Host phải là localhost; chế độ mạng -> Host phải thuộc danh sách cho phép
+        try:
+            host = (urlsplit("//" + request.host).hostname or "").lower()
+        except ValueError:
+            host = ""
+        if host not in (("localhost", "127.0.0.1", "::1") if loopback_only else allowed_hosts):
+            return _deny(403, "host khong hop le")
         if require_auth:
-            if limiter.blocked(ip):
-                return _deny(429, "thu lai sau", {"Retry-After": "60"})
+            blocked = limiter.blocked(ip)
             ok = False
             h = request.headers.get("Authorization", "")
             if h.startswith("Basic "):
@@ -91,10 +128,14 @@ def create_app(pipe: Pipeline, cfg: Config) -> Flask:
                           & hmac.compare_digest(pw.encode(), password))
                 except Exception:
                     ok = False
+            if blocked and not (ok and limiter.is_trusted(ip)):
+                return _deny(429, "thu lai sau", {"Retry-After": "60"})
             if not ok:
                 if h:
                     limiter.add(ip)
                 return _deny(401, "can xac thuc", {"WWW-Authenticate": 'Basic realm="labview", charset="UTF-8"'})
+            if not blocked:
+                limiter.trust(ip)
         if request.method == "POST":
             if request.mimetype != "application/json":
                 return _deny(415, "can Content-Type application/json")
@@ -141,15 +182,20 @@ def create_app(pipe: Pipeline, cfg: Config) -> Flask:
             clients["n"] += 1
 
         def gen():
-            seq = -1
+            seq, last = -1, None
             try:
                 while not pipe.stopping:
-                    seq2, jpg = pipe.wait_frame(seq, timeout=2.0)
-                    if seq2 == seq or jpg is None:
-                        continue
+                    seq2, jpg = pipe.wait_frame(seq, timeout=_STREAM_RESEND_S)
                     seq = seq2
+                    if jpg is not None and jpg is not last:
+                        last = jpg
+                    elif pipe.done:  # nguồn đã kết thúc và khung cuối đã gửi: đóng luồng, trả chỗ
+                        break
+                    elif last is None:
+                        continue
+                    # không có khung mới thì gửi lại khung cuối: ghi vào ổ cắm hỏng sẽ ném lỗi, nhờ đó phát hiện người xem đã ngắt
                     yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                           + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
+                           + str(len(last)).encode() + b"\r\n\r\n" + last + b"\r\n")
             finally:
                 with clients_mu:
                     clients["n"] -= 1

@@ -16,19 +16,26 @@ Gói thêm (đã cài vào venv): `flask`, `pytest` (xem `requirements.txt`).
 
 ## Mở ra mạng nội bộ (laptop khác mở trang) - BẮT BUỘC mật khẩu
 ```
-echo 'mat-khau-dai-it-nhat-8-ky-tu' > ~/labview.pw && chmod 600 ~/labview.pw     # đặt NGOÀI thư mục git
-python -m labview --source file:... --allow-network --password-file ~/labview.pw
-# hoặc: export LABVIEW_PASSWORD=...  rồi --allow-network
+echo 'mat-khau-dai-it-nhat-12-ky-tu' > ~/labview.pw && chmod 600 ~/labview.pw     # đặt NGOÀI thư mục git
+python -m labview --source file:... --allow-network --host 192.168.1.50 --password-file ~/labview.pw
+# hoặc: export LABVIEW_PASSWORD=...  rồi --allow-network --host <địa chỉ mạng nội bộ>
 ```
-Không mật khẩu (hoặc < 8 ký tự) thì chương trình từ chối khởi động (mã thoát 2). Trình duyệt hỏi
-đăng nhập: tên `lab`, mật khẩu như đã đặt. Không có mật khẩu mặc định; mật khẩu không được ghi vào log.
-Lưu ý: HTTP Basic qua HTTP thường không mã hóa, chỉ dùng trong mạng lab tin cậy. Sai mật khẩu 5 lần/phút từ một IP thì bị chặn 1 phút.
+Không mật khẩu (hoặc < 12 ký tự) thì chương trình từ chối khởi động (mã thoát 2). `--password-file` bị từ chối
+(mã 2) nếu nhóm/người khác đọc được (quyền rộng hơn 600, kiểm trên Unix/WSL; file nằm trên `/mnt/c|d` luôn là 777 nên
+đặt trong `~`). Trình duyệt hỏi đăng nhập: tên `lab`, mật khẩu như đã đặt. Không có mật khẩu mặc định; mật khẩu không được ghi vào log.
+Lưu ý: HTTP Basic qua HTTP thường không mã hóa, chỉ dùng trong mạng lab tin cậy.
+- Giới hạn đoán mật khẩu: sai 5 lần/phút từ một IP thì IP đó bị chặn 1 phút; TỔNG 20 lần sai/phút từ mọi IP thì mọi yêu cầu
+  nhận 429 trong 60 s. Khi đang chặn, chỉ máy đã đăng nhập ĐÚNG trong 1 giờ qua (chủ máy) vào được bằng mật khẩu đúng; máy lạ nhận 429
+  dù đúng hay sai (cho mọi mật khẩu đúng qua thì 429 thành "máy dò" và giới hạn vô nghĩa).
+- Tiêu đề Host: chế độ mạng chỉ nhận Host thuộc danh sách (mặc định: địa chỉ `--host`, `localhost`, tên máy; thêm bằng
+  `--allowed-host <tên>`, lặp được); Host lạ nhận 403. Dùng `--allow-network` mà không `--host` thì nghe MỌI giao diện và có cảnh báo:
+  nên chỉ rõ địa chỉ mạng nội bộ (khi đó `0.0.0.0` không phải tên khách gõ, hãy thêm `--allowed-host <IP hoặc tên khách dùng>`).
 
 ## Điểm cuối HTTP
 | Method | Đường dẫn | Việc |
 |---|---|---|
 | GET | `/`, `/static/app.js`, `/static/app.css` | trang (file cố định nạp sẵn, không đọc file theo đường dẫn người dùng) |
-| GET | `/stream.mjpg` | luồng MJPEG (tối đa 4 người xem) |
+| GET | `/stream.mjpg` | luồng MJPEG (tối đa 4 người xem; nguồn đứng thì gửi lại khung cuối mỗi 2 s để phát hiện người xem đã ngắt và trả chỗ; nguồn hết thì đóng luồng) |
 | GET | `/snapshot.jpg` | khung hiện tại (đã vẽ) |
 | GET | `/api/state` | JSON: fps, ms xử lý, độ trễ, CPU, tracks, lock, notice, events |
 | POST | `/api/lock` | body JSON đúng một dạng: `{"x":0..1,"y":0..1}` (tọa độ bấm chuẩn hóa) / `{"track_id":N}` / `{"best":true}` |
@@ -42,6 +49,12 @@ POST cần `Content-Type: application/json`, `Origin` (nếu có) phải trùng 
 - Giao diện mở rộng: `FrameSource` (`sources.py`: file, camera OpenCV; thêm `picamera2` bằng lớp con + đăng ký ở `make_source`), `Detector`, `LockSink` (`outputs.py`: hiện có `LogSink`; sau này `ServoSink` một trục gật, đọc trạng thái FC).
 - Hình học (`geometry.py`): góc = atan((u-cx)/fx), atan((cy-v)/fy) (+ = phải/lên); khoảng cách = fx * rộng_thật / rộng_khung_bao, mặc định rộng 0,30 m (`--real-width`), luôn hiện "giả định mục tiêu rộng X m". `fx` mặc định suy từ `--hfov` (66 độ) và khung hình; ghi đè bằng `--fx --fy --cx --cy` (pixel của khung ĐÃ xử lý, sau thu nhỏ).
 - Tự bỏ khóa khi mất vật thể quá `--lost-timeout` (2 s), báo trên màn hình và trong log.
+- Gán lại khóa khi bộ theo dõi đổi ID (`lock.py`, bật mặc định, tắt bằng `--no-reacquire`): trong thời gian chờ, nếu có track MỚI
+  (ID chưa có mặt ở khung cuối còn thấy mục tiêu) nằm gần vị trí dự đoán (tâm cuối + vận tốc ảnh ~0,5 s gần nhất, ngoại suy tối đa 1 s)
+  và bề rộng tỉ lệ trong [`--reacq-size-min`=0,5; `--reacq-size-max`=2,0] so với khung cuối thì khóa chuyển sang track đó; nhiều ứng viên thì
+  lấy cái gần nhất. Cổng khoảng cách = cạnh lớn khung bao cuối x (`--reacq-gate`=1,5 + `--reacq-gate-per-s`=2,0 x giây mất dấu).
+  Không có ứng viên thì giữ hành vi cũ (hết hạn thì bỏ khóa). Trạng thái `lock.state` = `tracking` (bám) | `searching` (đang tìm lại) |
+  `reacquired` (vừa gán lại, 2 s) và `lock.reacquired` (số lần gán lại từ lúc khóa) có trong `/api/state`, trên hình và trên trang.
 
 ## Chuyển sang Raspberry Pi 5 (chưa làm)
 - Thêm `Picamera2Source(FrameSource)`: `Picamera2().create_video_configuration(main={"size":(1280,720),"format":"RGB888"})`, `capture_array()` trả khung (RGB888 của picamera2 thực chất là BGR cho OpenCV), `live=True`.
@@ -52,4 +65,4 @@ POST cần `Content-Type: application/json`, `Origin` (nếu có) phải trùng 
 `YOLOv8/video_processor.py`: mô hình luồng camera/suy luận tách rời, `grab()+retrieve()` lấy khung mới nhất, mở V4L2 MJPG buffer 1; `frame_processor.py`: gọi `model.track(persist=True, bytetrack)`. `AI-6` không có mã picamera2 (chỉ comment V4L2). Không dùng `drone_tg\`.
 
 ## Công cụ kiểm chứng
-`e2e_check.sh` (chạy thật bằng curl, tự tắt máy chủ), `fp_check.py` (đếm khung "drone" giả), `tools_to_png.py`. Ảnh chụp: `docs/`.
+`e2e_check.sh` (chạy thật bằng curl, tự tắt máy chủ), `fp_check.py` (đếm khung "drone" giả), `tools_to_png.py`, `bench_reacquire.py` (đo trước/sau gán lại khóa trên file video, không cần máy chủ). Ảnh chụp: `docs/`.

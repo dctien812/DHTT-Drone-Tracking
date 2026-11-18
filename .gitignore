@@ -29,3 +29,6 @@ vision/verify*/log_*.txt
 vision/results/verify/v1rerun/raw/
 *.log
 *.err
+
+# Model da xuat cho Raspberry Pi (nang, tao lai duoc)
+pi/models/

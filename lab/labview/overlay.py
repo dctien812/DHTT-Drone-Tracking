@@ -21,8 +21,13 @@ def _label(img, text, x, y, color):
     cv2.putText(img, text, (x + 2, y - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
 
 
-def draw(img: np.ndarray, tracks: Sequence[Track], locked_id: Optional[int], cx: float, cy: float) -> np.ndarray:
-    """Vẽ trực tiếp lên `img` (đã là bản sao của khung) và trả lại."""
+_STATE_VN = {"tracking": "BAM", "searching": "DANG TIM LAI", "reacquired": "DA GAN LAI"}
+
+
+def draw(img: np.ndarray, tracks: Sequence[Track], locked_id: Optional[int], cx: float, cy: float,
+         status=None) -> np.ndarray:
+    """Vẽ trực tiếp lên `img` (đã là bản sao của khung) và trả lại.
+    `status` (LockStatus, tùy chọn): thêm trạng thái bám / đang tìm lại / đã gán lại + số lần gán lại."""
     h, w = img.shape[:2]
     c = (int(cx), int(cy))
     cv2.line(img, (c[0] - 12, c[1]), (c[0] + 12, c[1]), WHITE, 1, cv2.LINE_AA)
@@ -33,8 +38,16 @@ def draw(img: np.ndarray, tracks: Sequence[Track], locked_id: Optional[int], cx:
             cv2.rectangle(img, (x1, y1), (x2, y2), RED, 3, cv2.LINE_AA)
             cv2.rectangle(img, (x1 - 5, y1 - 5), (x2 + 5, y2 + 5), YELLOW, 1, cv2.LINE_AA)
             cv2.line(img, c, ((x1 + x2) // 2, (y1 + y2) // 2), YELLOW, 1, cv2.LINE_AA)
-            _label(img, f"KHOA #{t.id} {t.conf:.2f}", x1, y1 - 6, YELLOW)
+            extra = ""
+            if status is not None and status.track is not None:
+                extra = f" {_STATE_VN.get(status.state, '')} x{status.reacquired}"
+            _label(img, f"KHOA #{t.id} {t.conf:.2f}{extra}", x1, y1 - 6, YELLOW)
         else:
             cv2.rectangle(img, (x1, y1), (x2, y2), GREEN, 2, cv2.LINE_AA)
             _label(img, f"#{t.id} {t.conf:.2f}", x1, y1 - 4, GREEN)
+    if status is not None and status.active and status.track is None:  # đang tìm lại: vẽ tâm dự đoán + chữ
+        if status.predicted is not None:
+            p = (int(status.predicted[0]), int(status.predicted[1]))
+            cv2.circle(img, p, 14, YELLOW, 2, cv2.LINE_AA)
+        _label(img, f"KHOA #{status.track_id} DANG TIM LAI {status.lost_for_s:.1f}s x{status.reacquired}", 6, 24, YELLOW)
     return img
