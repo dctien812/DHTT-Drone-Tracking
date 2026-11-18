@@ -193,3 +193,19 @@
 - Bằng chứng: `vision/results/v2/compare.md`, `V2_REPORT.md`; trưởng phòng đã đối chiếu bảng compare.md với báo cáo, khớp. Chưa có vai Chất lượng đo lại độc lập.
 - Cảnh báo của agent: kiểm rò rỉ độc lập (dHash) còn 11,1% DUT, 3,5% Det-Fly; chỉ một seed.
 - Sau huấn luyện: bắt đầu chạy mô phỏng `1:none:dive15` (lần đầu của kịch bản cắm xuống).
+
+## 2026-11-18 · Mô phỏng dive15 seed 1 · 01 Trưởng phòng · PASS (lần chạy đầu của kịch bản cắm xuống)
+- `onboard/simtools/out/20261118_064426_10ms_s1_none/result.txt`, đã đọc tay: pha cắm d3 24,6–26,0 m, ra khung 0,87 s; giảm tốc cuối 17,6–26,6 m; độ cao chaser thấp nhất 25,2 m; TRACK 100%.
+- Sửa nhỏ `run_acceptance.sh`: bộ đếm `n` tăng trong pipe nên mất (log ghi đè `_acc_run_0.log`); trưởng phòng tự sửa 2 dòng, `bash -n` qua. Commit cùng kết quả nghiệm thu.
+- Bắt đầu 7 lần chạy còn lại của ma trận (dive25 x3, dive15 seed 2–3, blackout, disengage).
+
+## 2026-11-18 · Quyết định của người dùng
+- Không huấn luyện lại lúc này; lab dùng model cũ `ft_v8n_best.pt`. Thử hai hướng thay thế (lọc quỹ đạo; ảnh âm từ camera thật). Ra sân lượt 1 sẽ ghi dữ liệu để huấn luyện.
+- Áp dụng quy tắc văn phòng mới (CLAUDE.md và file vai sửa 2026-11-18, đề xuất 01–06) cho phiên này: vòng sửa tối đa 5 lượt, test viết trước, quy tắc dự án chép vào "Bối cảnh".
+
+## 2026-11-18 · Thử lọc máy bay theo quỹ đạo · 05 software-engineer · XONG CÒN NGHI NGỜ → KHÔNG tích hợp
+- Chạy lại ByteTrack trên kết quả nhận diện có sẵn (625 vệt; 8 vệt máy bay, 617 vệt drone), chấm kiểu bỏ ra một video.
+- Đặc trưng "thẳng, đều" không tách được (AUC 0,5–0,7). Chỉ sau khi bù chuyển động camera mới có tín hiệu "gần đứng yên trên ảnh": quan sát 2 s loại 5–6/6 vệt máy bay, loại nhầm 5–7% khung drone; nhưng drone lơ lửng cũng có đặc điểm đó.
+- Giới hạn: 4 video máy bay; chuyển động camera tương quan với lớp; chưa đo sai số phép bù.
+- Trưởng phòng: đối chiếu phạm vi (chỉ 2 script mới + `vision/results/traj/`), chạy lại lệnh `run_traj_filter_try.sh` chạy được. Chưa có vai Chất lượng rà script (kết quả âm, không dùng tiếp nên không rà).
+- Báo cáo có dòng `Trạng thái:` → phiên này đã nhận định nghĩa vai mới.
