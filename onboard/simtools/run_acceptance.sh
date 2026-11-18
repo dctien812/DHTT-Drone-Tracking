@@ -64,7 +64,8 @@ n=0
 for spec in $MATRIX; do
   IFS=: read -r seed scen mode <<<"$spec"
   if [ -e "$OUT_ROOT/_STOP" ]; then echo "co $OUT_ROOT/_STOP: thoat" | tee -a "$SUM"; exit 5; fi
-  echo "--- lan $((++n)): $spec ; $(uptime)" | tee -a "$SUM"
+  n=$((n+1))   # tang o shell chinh (dat trong pipe voi tee thi mat, moi lan deu ghi de _acc_run_0.log)
+  echo "--- lan $n: $spec ; $(uptime)" | tee -a "$SUM"
   extra=()
   if [ "$mode" = "soft" ]; then extra=(TARGET_PY="$HERE/target_softbrake.py" TARGET_DECEL="$TARGET_DECEL")
   elif [[ "$mode" =~ ^dive([0-9]+)$ ]]; then extra=(DIVE_DEG="${BASH_REMATCH[1]}"); fi   # cam xuong (scen phai la none), giam toc cuoi nhe

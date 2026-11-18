@@ -209,3 +209,11 @@
 - Giới hạn: 4 video máy bay; chuyển động camera tương quan với lớp; chưa đo sai số phép bù.
 - Trưởng phòng: đối chiếu phạm vi (chỉ 2 script mới + `vision/results/traj/`), chạy lại lệnh `run_traj_filter_try.sh` chạy được. Chưa có vai Chất lượng rà script (kết quả âm, không dùng tiếp nên không rà).
 - Báo cáo có dòng `Trạng thái:` → phiên này đã nhận định nghĩa vai mới.
+
+## 2026-11-18 · Công cụ ghi hình `lab/tools/record_frames.py` · quy trình test trước · DUYỆT
+- Lượt 0: 07 test-engineer viết 42 test (pha đỏ: ImportError) → 05 software-engineer viết mã (42 pass, lab 140 pass, một lần chạy CLI với video có sẵn: 20 ảnh) → 08 checker: đạt yêu cầu, 0 Nghiêm trọng, 4 Quan trọng (ghi session.json ngoài try; 3 điểm test yếu/thiếu).
+- Vòng sửa lượt 1: 07 siết test lên 55 ca (2 đỏ đúng lý do) → 05 sửa (55 pass, lab 153 pass) → 08 rà lại: 4 vấn đề đã hết, chất lượng DUYỆT; 08 tự chạy lại 55/153 pass.
+- Mức Nhỏ, ghi sổ, không sửa: session.json có thể cụt khi đĩa đầy giữa lúc ghi (frames.csv đã flush từng dòng); nhánh csv close lỗi chưa có test và có thể che lý do dừng gốc; ghi header csv lỗi thì không có session.json; flush chưa chống mất điện (cân nhắc fsync sau khi đo trên thẻ nhớ Pi); t0 tính trước open(); max_seconds<=0 và min_free_mb<0 chưa kiểm; mặc định 1280x720 chứ chưa phải cỡ gốc cảm biến.
+- Chưa kiểm chứng: camera thật, tốc độ ghi thẻ nhớ, đĩa đầy thật.
+- `run_acceptance.sh` (2 dòng, trưởng phòng sửa): 08 xác nhận đúng.
+- Điều chỉnh cách làm theo ý người dùng: chạy mô phỏng/đo đạc từ nay giao 07; kết quả nghiệm thu giao 08 đối chiếu.

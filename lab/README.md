@@ -75,6 +75,16 @@ cd lab && ~/venv-lab/bin/python -m labview --source picamera2 --cam-width 1280 -
 - Suy luận trên Pi 5 cần NCNN/ONNX thay `.pt`; tốc độ khung hình chưa đo.
 - `--source picamera2` mà không truyền `--hfov` lẫn `--calib` thì tự dùng hfov 102 (ghi log); webcam/video mặc định 66. `--hfov` cho Camera Module 3 Wide khoảng 102 độ (theo nhà sản xuất, CHƯA kiểm); góc rộng có méo ống kính, cần hiệu chỉnh nếu muốn góc chính xác.
 
+## Ghi khung hình gốc để làm dữ liệu huấn luyện (`tools/record_frames.py`, CHƯA thử trên camera thật)
+```
+cd lab && ~/venv-lab/bin/python tools/record_frames.py --source picamera2 --out ~/data --tag san1 --every 3 --max-seconds 600
+```
+- Chỉ ghi ra đĩa (không mở cổng mạng, không gửi lệnh). Mỗi lần chạy tạo `<out>/<YYYYmmdd_HHMMSS>[_tag]/` gồm `frames/000000.jpg...` (cỡ gốc, không thu nhỏ), `frames.csv` (`saved_idx,src_idx,file,t_mono,t_wall_iso,width,height`, flush từng ảnh) và `session.json` (tham số, số khung đọc/lưu, `src_gaps` = khung nguồn bị bỏ, `stop_reason`).
+- Cờ: `--every N` (lưu 1/N khung), `--max-frames`, `--max-seconds`, `--min-free-mb` (mặc định 500: dừng khi đĩa còn ít hơn, kiểm lại mỗi 30 ảnh), `--format jpg|png`, `--jpeg-quality`, và các cờ camera như labview (`--cam-width/--cam-height/--cam-fps/--focus/--lens-position/--cam-buffers`).
+- Mặc định độ phân giải giống labview (1280x720), KHÔNG phải độ phân giải gốc cảm biến: muốn cỡ gốc phải truyền `--cam-width/--cam-height` (chưa xác định cỡ gốc imx708 từ mã hiện có).
+- Ctrl+C hoặc SIGTERM dừng êm (`stop_reason=stopped`). Mã thoát 0 khi dừng bình thường; 1 khi `error` hoặc `disk_low`; 2 khi tham số/nguồn sai.
+- Tốc độ ghi thẻ nhớ trên Pi chưa đo: nếu `src_gaps` lớn thì tăng `--every` hoặc giảm `--jpeg-quality`.
+
 ## Dùng lại từ `AI-6` (chỉ đọc ý tưởng/mẫu)
 `YOLOv8/video_processor.py`: mô hình luồng camera/suy luận tách rời, `grab()+retrieve()` lấy khung mới nhất, mở V4L2 MJPG buffer 1; `frame_processor.py`: gọi `model.track(persist=True, bytetrack)`. `AI-6` không có mã picamera2 (chỉ comment V4L2). Không dùng `drone_tg\`.
 
