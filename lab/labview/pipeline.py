@@ -39,7 +39,8 @@ class Pipeline:
         self.events: collections.deque = collections.deque(maxlen=30)
         self.lock = LockManager(cfg.lost_timeout_s, on_event=self._on_event,
                                 reacquire=ReacquireParams(cfg.reacquire, cfg.reacq_gate, cfg.reacq_gate_per_s,
-                                                          cfg.reacq_size_min, cfg.reacq_size_max))
+                                                          cfg.reacq_size_min, cfg.reacq_size_max,
+                                                          cfg.conf if cfg.reacq_min_conf is None else cfg.reacq_min_conf))
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         # khung mới nhất giữa hai luồng
@@ -173,7 +174,7 @@ class Pipeline:
             self.lock.release("video lap lai")
         tracks = self.detector.track(img)
         t1 = time.monotonic()
-        status = self.lock.update(tracks)
+        status = self.lock.update(tracks, (w, h))
         k = self._intrinsics(w, h)
         report = self._report(status, k, fr.ts)
         for s in self.sinks:

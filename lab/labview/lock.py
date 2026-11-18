@@ -47,12 +47,14 @@ def hit_test(px: float, py: float, tracks: Sequence[Track], margin: float = 0.0)
 class ReacquireParams:
     """Gán lại khóa khi bộ theo dõi đổi ID (ByteTrack hay cấp ID mới cho cùng một vật).
     Cổng khoảng cách = cạnh lớn của khung bao cuối * (gate + gate_per_s * giây_mất_dấu);
-    tỉ lệ bề rộng (mới / cuối) phải trong [size_min, size_max]."""
+    tỉ lệ bề rộng (mới / cuối) phải trong [size_min, size_max]; ứng viên phải có conf >= min_conf.
+    Không gán lại khi mục tiêu vừa ở sát mép ảnh (< 0,5 cạnh khung bao) và đang đi ra ngoài (coi là đã rời khung)."""
     enabled: bool = True
-    gate: float = 1.5
-    gate_per_s: float = 2.0
+    gate: float = 1.0
+    gate_per_s: float = 1.5
     size_min: float = 0.5
     size_max: float = 2.0
+    min_conf: float = 0.25
 
 
 _VEL_WINDOW_S = 0.5   # cửa sổ ước lượng vận tốc ảnh (từ các lần thấy gần nhất)
@@ -85,6 +87,8 @@ class LockManager:
         self._hist: list = []                     # (t, cx, cy) các lần thấy gần nhất
         self._reacq = 0
         self._reacq_at = -1e9
+        self._size = 0.0
+        self.reacq_info: list = []  # mỗi lần gán lại: dist (theo cạnh khung bao), size_ratio, lost_s (cho bench)
 
     def _emit(self, msg: str) -> None:
         self._on_event(msg)
@@ -95,33 +99,54 @@ class LockManager:
         cx, cy = _center(t.box)
         self._hist = [h for h in self._hist if now - h[0] <= _VEL_WINDOW_S] + [(now, cx, cy)]
 
-    def _predict(self, now: float) -> tuple[float, float]:
+    def _velocity(self) -> tuple[float, float]:
         cx, cy = _center(self._last_box)
         t0, x0, y0 = self._hist[0]
         dt = self._last_seen - t0
         if dt < 0.08:  # quá ít lịch sử: vận tốc nhiễu, coi như đứng yên
-            return cx, cy
-        s = min(now - self._last_seen, _PRED_MAX_S)
-        return cx + (cx - x0) / dt * s, cy + (cy - y0) / dt * s
+            return 0.0, 0.0
+        return (cx - x0) / dt, (cy - y0) / dt
 
-    def _pick(self, tracks: Sequence[Track], pred: tuple[float, float], lost_for: float) -> Optional[Track]:
+    def _predict(self, now: float, frame_wh=None) -> tuple[float, float]:
+        cx, cy = _center(self._last_box)
+        vx, vy = self._velocity()
+        s = min(now - self._last_seen, _PRED_MAX_S)
+        px, py = cx + vx * s, cy + vy * s
+        if frame_wh:  # vị trí dự đoán không ra ngoài khung hình
+            px, py = min(max(px, 0.0), frame_wh[0]), min(max(py, 0.0), frame_wh[1])
+        return px, py
+
+    def _left_frame(self, frame_wh) -> bool:
+        """Khung bao cuối sát mép ảnh và vận tốc hướng ra ngoài: coi mục tiêu đã rời khung."""
+        if not frame_wh:
+            return False
+        b = self._last_box
+        m = 0.5 * max(b[2] - b[0], b[3] - b[1])
+        vx, vy = self._velocity()
+        return ((b[0] < m and vx < 0) or (frame_wh[0] - b[2] < m and vx > 0)
+                or (b[1] < m and vy < 0) or (frame_wh[1] - b[3] < m and vy > 0))
+
+    def _pick(self, tracks: Sequence[Track], pred: tuple[float, float], lost_for: float):
+        """Trả (track, khoảng cách tới vị trí dự đoán, tỉ lệ bề rộng) hoặc None."""
         p = self.reacquire
         lw = self._last_box[2] - self._last_box[0]
         size = max(lw, self._last_box[3] - self._last_box[1])
         if lw <= 0 or size <= 0:
             return None
+        self._size = size
         gate = size * (p.gate + p.gate_per_s * lost_for)
-        best, best_d = None, None
+        best, best_d, best_r = None, None, 0.0
         for t in tracks:
             if t.id == self._id or t.id in self._last_ids:
                 continue
-            if not (p.size_min <= (t.box[2] - t.box[0]) / lw <= p.size_max):
+            ratio = (t.box[2] - t.box[0]) / lw
+            if t.conf < p.min_conf or not (p.size_min <= ratio <= p.size_max):
                 continue
             cx, cy = _center(t.box)
             d = ((cx - pred[0]) ** 2 + (cy - pred[1]) ** 2) ** 0.5
             if d <= gate and (best_d is None or d < best_d):
-                best, best_d = t, d
-        return best
+                best, best_d, best_r = t, d, ratio
+        return None if best is None else (best, best_d, best_r)
 
     def lock_id(self, track_id: int, tracks: Sequence[Track]) -> bool:
         with self._mu:
@@ -130,7 +155,7 @@ class LockManager:
                 return False
             now = self._clock()
             self._id, self._since = track_id, now
-            self._hist, self._reacq, self._reacq_at = [], 0, -1e9
+            self._hist, self._reacq, self._reacq_at, self.reacq_info = [], 0, -1e9, []
             self._observe(now, t, tracks)
         self._emit(f"KHOA muc tieu ID {track_id}")
         return True
@@ -155,8 +180,8 @@ class LockManager:
         self._emit(f"HUY khoa ID {tid} ({reason})")
         return True
 
-    def update(self, tracks: Sequence[Track]) -> LockStatus:
-        """Gọi mỗi khung hình với danh sách track hiện tại."""
+    def update(self, tracks: Sequence[Track], frame_wh: Optional[tuple[float, float]] = None) -> LockStatus:
+        """Gọi mỗi khung hình với danh sách track hiện tại (và kích thước khung đã xử lý nếu biết)."""
         lost_msg = None
         with self._mu:
             if self._id is None:
@@ -172,13 +197,18 @@ class LockManager:
                 tid, self._id = self._id, None
                 lost_msg = f"TU BO KHOA ID {tid}: mat muc tieu {lost_for:.1f} s (nguong {self.lost_timeout_s:g} s)"
             else:
-                pred = self._predict(now)
-                cand = self._pick(tracks, pred, lost_for) if self.reacquire.enabled else None
-                if cand is None:
+                pred = self._predict(now, frame_wh)
+                hit = None
+                if self.reacquire.enabled and not self._left_frame(frame_wh):
+                    hit = self._pick(tracks, pred, lost_for)
+                if hit is None:
                     return LockStatus(True, self._id, None, self._since, lost_for, "searching", self._reacq, pred)
+                cand, dist, ratio = hit
                 old, self._id = self._id, cand.id
                 self._reacq += 1
                 self._reacq_at = now
+                self.reacq_info = (self.reacq_info + [dict(dist=dist / self._size, size_ratio=ratio, lost_s=lost_for)])[-200:]
+                self._hist = []  # vận tốc bắt đầu lại từ track mới, không trộn vị trí của track cũ
                 self._observe(now, cand, tracks)
                 msg = f"GAN LAI khoa ID {old} -> {cand.id} (mat {lost_for:.2f} s, lan {self._reacq})"
                 st = LockStatus(True, self._id, cand, self._since, 0.0, "reacquired", self._reacq)

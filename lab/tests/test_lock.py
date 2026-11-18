@@ -1,3 +1,4 @@
+import pytest
 from labview.lock import LockManager, Track, hit_test
 
 
@@ -191,3 +192,53 @@ def test_reacquire_can_be_disabled():
     clk.t += 0.1
     st = m.update([T(5, 121, 101, 161, 141)])
     assert st.state == "searching" and st.track is None and m.locked_id() == 1
+
+
+# ---------------- D1/D2: ngưỡng conf, kẹp trong khung, rời khung, lịch sử vận tốc
+FRAME = (640, 512)
+
+
+def test_candidate_below_min_conf_is_rejected():
+    m, clk, _ = moving_lock(ReacquireParams(min_conf=0.4))
+    clk.t += 0.1
+    assert m.update([T(5, 121, 101, 161, 141, c=0.3)]).state == "searching"
+    assert m.update([T(5, 121, 101, 161, 141, c=0.45)]).track_id == 5
+
+
+def test_predicted_position_clamped_to_frame():
+    m, clk, _ = moving_lock()          # 100 px/s sang phải, tâm cuối (130,120)
+    clk.t += 0.9                       # ngoại suy 0,9 s -> x = 220; khung rộng 200 thì kẹp ở 200
+    st = m.update([], (200, 512))
+    assert st.predicted == (200.0, 120.0)
+    assert m.update([], None).predicted == pytest.approx((220.0, 120.0))
+
+
+def test_no_reacquire_when_target_left_through_edge():
+    clk, ev = Clock(), []
+    m = LockManager(2.0, clk, ev.append)
+    m.lock_id(1, [T(1, 560, 100, 600, 140)])
+    clk.t += 0.1
+    m.update([T(1, 580, 100, 620, 140)], FRAME)   # sát mép phải (640-620=20 < 20? =20 => dùng mép 630 bên dưới)
+    clk.t += 0.1
+    m.update([T(1, 590, 100, 630, 140)], FRAME)   # 10 px tới mép phải, đang đi sang phải
+    clk.t += 0.1
+    near = T(5, 560, 100, 600, 140)               # ngay vị trí kẹp, cùng cỡ: nếu không có luật rời khung thì sẽ gán
+    st = m.update([near], FRAME)
+    assert st.state == "searching" and st.track is None and m.locked_id() == 1
+    # cùng tình huống nhưng đi vào trong (vận tốc hướng vào) thì vẫn gán lại được
+    clk2 = Clock(); m2 = LockManager(2.0, clk2)
+    m2.lock_id(1, [T(1, 600, 100, 630, 140)])
+    clk2.t += 0.1
+    m2.update([T(1, 570, 100, 610, 140)], FRAME)
+    clk2.t += 0.1
+    assert m2.update([T(5, 560, 100, 600, 140)], FRAME).track_id == 5
+
+
+def test_velocity_history_restarts_after_reacquire():
+    m, clk, _ = moving_lock()                      # 100 px/s sang phải
+    clk.t += 0.1
+    assert m.update([T(5, 121, 101, 161, 141)]).track_id == 5
+    assert m._hist == [(clk.t, 141.0, 121.0)]     # chỉ còn quan sát của track mới
+    clk.t += 0.1
+    st = m.update([])                              # chưa có vận tốc mới: dự đoán đứng yên tại tâm track mới
+    assert st.predicted == (141.0, 121.0)

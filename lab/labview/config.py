@@ -35,10 +35,11 @@ class Config:
     real_width_m: float = 0.30
     lost_timeout_s: float = 2.0
     reacquire: bool = True          # tự gán lại khóa cho track mới khi ID đang khóa biến mất
-    reacq_gate: float = 1.5         # cổng khoảng cách cơ bản, tính theo cạnh lớn của khung bao cuối
-    reacq_gate_per_s: float = 2.0   # cổng nở thêm bấy nhiêu "cạnh khung bao" cho mỗi giây mất dấu
+    reacq_gate: float = 1.0         # cổng khoảng cách cơ bản, tính theo cạnh lớn của khung bao cuối
+    reacq_gate_per_s: float = 1.5   # cổng nở thêm bấy nhiêu "cạnh khung bao" cho mỗi giây mất dấu
     reacq_size_min: float = 0.5     # tỉ lệ bề rộng (mới / cuối) tối thiểu
     reacq_size_max: float = 2.0     # tỉ lệ bề rộng (mới / cuối) tối đa
+    reacq_min_conf: Optional[float] = None  # conf tối thiểu của ứng viên; None = bằng --conf (ngưỡng hiển thị)
     click_margin_px: float = 12.0
     loop: bool = True
     pace: bool = True

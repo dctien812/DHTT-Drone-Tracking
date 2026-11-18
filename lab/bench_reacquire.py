@@ -41,7 +41,21 @@ def detect(path: str, threads: int, max_width: int, weights: str) -> tuple[float
     return fps, out
 
 
-def replay(frames, fps, params: ReacquireParams, timeout: float = 2.0):
+def suspicious(i) -> bool:
+    """Gán lại "đáng ngờ": cách vị trí dự đoán > 2 cạnh khung bao, hoặc tỉ lệ cỡ ngoài [0,67; 1,5]."""
+    return i["dist"] > 2.0 or not (0.67 <= i["size_ratio"] <= 1.5)
+
+
+def video_wh(path: str, max_width: int) -> tuple[int, int]:
+    cap = cv2.VideoCapture(path)
+    w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+    if max_width and w > max_width:
+        h, w = max(1, int(round(h * max_width / w))), max_width
+    return w, h
+
+
+def replay(frames, fps, params: ReacquireParams, wh=None, timeout: float = 2.0):
     t = [0.0]
     ev: list[str] = []
     m = LockManager(timeout, lambda: t[0], ev.append, params)
@@ -54,7 +68,7 @@ def replay(frames, fps, params: ReacquireParams, timeout: float = 2.0):
             if tracks and m.lock_best(tracks) is not None:
                 start = i
             continue
-        per_frame.append((m.update(tracks), tracks))
+        per_frame.append((m.update(tracks, wh), tracks))
     if start is None:
         return None
     n = len(per_frame) + 1  # gồm cả khung khóa
@@ -62,6 +76,7 @@ def replay(frames, fps, params: ReacquireParams, timeout: float = 2.0):
     visible = 1 + sum(1 for s, _ in per_frame if s.active and s.track is not None)
     return dict(start=start, frames=n, active=active, visible=visible,
                 drops=sum("TU BO KHOA" in e for e in ev), reacq=sum("GAN LAI" in e for e in ev),
+                info=m.reacq_info, sus=sum(1 for i in m.reacq_info if suspicious(i)),
                 per_frame=per_frame, events=ev)
 
 
@@ -72,18 +87,19 @@ def main() -> int:
     ap.add_argument("--threads", type=int, default=2)
     ap.add_argument("--max-width", type=int, default=960)
     ap.add_argument("--weights", default=DEFAULT_WEIGHTS)
-    ap.add_argument("--gate", type=float, default=1.5)
-    ap.add_argument("--gate-per-s", type=float, default=2.0)
+    ap.add_argument("--gate", type=float, default=1.0)
+    ap.add_argument("--gate-per-s", type=float, default=1.5)
     ap.add_argument("--size-min", type=float, default=0.5)
     ap.add_argument("--size-max", type=float, default=2.0)
+    ap.add_argument("--min-conf", type=float, default=0.25)
     ap.add_argument("--save-frames", default=None, help="thư mục lưu 3 khung kết quả (logic mới)")
     ap.add_argument("--frames-of", nargs="*", default=[], help="tên video cần lưu khung")
     a = ap.parse_args()
     os.makedirs(a.cache, exist_ok=True)
     old_p = ReacquireParams(enabled=False)
-    new_p = ReacquireParams(True, a.gate, a.gate_per_s, a.size_min, a.size_max)
-    print("video | khung | ID khac nhau | CU: con khoa% / thay% / bo / gan | MOI: con khoa% / thay% / bo / gan")
-    tot = dict(o=[0, 0, 0, 0, 0], n=[0, 0, 0, 0, 0])
+    new_p = ReacquireParams(True, a.gate, a.gate_per_s, a.size_min, a.size_max, a.min_conf)
+    print("video | khung | ID khac nhau | CU: con khoa% / thay% / bo / gan | MOI: con khoa% / thay% / bo / gan / dang ngo")
+    tot = dict(o=[0, 0, 0, 0, 0, 0], n=[0, 0, 0, 0, 0, 0])
     for v in a.videos:
         name = Path(v).stem
         cf = Path(a.cache) / f"{name}.json"
@@ -94,23 +110,24 @@ def main() -> int:
             fps, frames = detect(v, a.threads, a.max_width, a.weights)
             cf.write_text(json.dumps({"fps": fps, "frames": frames}))
         ids = {r[0] for fr in frames for r in fr}
-        o, n = replay(frames, fps, old_p), replay(frames, fps, new_p)
+        wh = video_wh(v, a.max_width)
+        o, n = replay(frames, fps, old_p, wh), replay(frames, fps, new_p, wh)
         if o is None:
             print(f"{name} | {len(frames)} | {len(ids)} | khong co phat hien nao")
             continue
         for k, r in (("o", o), ("n", n)):
-            for j, key in enumerate(("frames", "active", "visible", "drops", "reacq")):
+            for j, key in enumerate(("frames", "active", "visible", "drops", "reacq", "sus")):
                 tot[k][j] += r[key]
         f = lambda r: f"{100 * r['active'] / r['frames']:.0f}% / {100 * r['visible'] / r['frames']:.0f}% / {r['drops']} / {r['reacq']}"
-        print(f"{name} | {len(frames)} | {len(ids)} | {f(o)} | {f(n)}")
-        for e in n["events"]:
-            if "GAN LAI" in e:
-                print("    ", e)
+        print(f"{name} | {len(frames)} | {len(ids)} | {f(o)} | {f(n)} / {n['sus']}")
+        for e, i in zip([e for e in n["events"] if "GAN LAI" in e], n["info"]):
+            print(f"     {e} | cach du doan {i['dist']:.2f} canh, ti le co {i['size_ratio']:.2f}, mat {i['lost_s']:.2f} s"
+                  + ("  <== DANG NGO" if suspicious(i) else ""))
         if a.save_frames and name in a.frames_of:
             save(v, n, a.save_frames, name, a.max_width)
     for k, lab in (("o", "CU"), ("n", "MOI")):
         T = tot[k]
-        print(f"TONG {lab}: con khoa {100 * T[1] / T[0]:.1f}% khung, thay {100 * T[2] / T[0]:.1f}%, bo khoa {T[3]}, gan lai {T[4]}")
+        print(f"TONG {lab}: con khoa {100 * T[1] / T[0]:.1f}% khung, thay {100 * T[2] / T[0]:.1f}%, bo khoa {T[3]}, gan lai {T[4]}, dang ngo {T[5]}")
     return 0
 
 

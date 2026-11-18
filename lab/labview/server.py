@@ -36,7 +36,8 @@ _STREAM_RESEND_S = 2.0                       # không có khung mới: gửi l�
 
 class _FailLimiter:
     """Giới hạn đoán mật khẩu: theo từng IP và TỔNG cho cả máy chủ (chống đổi IP).
-    Khi đang khóa chỉ IP "tin cậy" (đã nhập ĐÚNG gần đây) mới được vào bằng mật khẩu đúng; IP lạ
+    Hạn mức theo IP áp dụng cho MỌI IP kể cả tin cậy (đang bị chặn thì mọi lần thử, kể cả đúng, nhận 429; mọi lần
+    sai đều được đếm). Khi đang khóa TOÀN CỤC chỉ IP "tin cậy" (đã nhập ĐÚNG gần đây) mới được vào bằng mật khẩu đúng; IP lạ
     luôn nhận 429 dù đúng hay sai, để 429 không thành "máy dò" mật khẩu (nếu cho mọi mật khẩu đúng qua
     thì kẻ dò cứ thử tiếp: sai nhận 429, đúng nhận 200, giới hạn thành vô nghĩa)."""
 
@@ -48,20 +49,31 @@ class _FailLimiter:
         self._global_until = 0.0
         self._trusted: dict[str, float] = {}
 
-    def blocked(self, ip: str) -> bool:
+    def ip_blocked(self, ip: str) -> bool:
         with self._mu:
-            now = self.clock()
-            lst = [t for t in self._fails.get(ip, []) if now - t < _FAIL_WINDOW]
-            if lst:
-                self._fails[ip] = lst
-            else:
-                self._fails.pop(ip, None)
-            return len(lst) >= _FAIL_LIMIT or now < self._global_until
+            return self._ip_until(ip) > self.clock()
+
+    def global_blocked(self) -> bool:
+        with self._mu:
+            return self.clock() < self._global_until
+
+    def retry_after(self, ip: str) -> int:
+        with self._mu:
+            return max(1, int(max(self._ip_until(ip), self._global_until) - self.clock() + 0.999))
+
+    def _ip_until(self, ip: str) -> float:  # gọi khi đang giữ khóa; thời điểm hết chặn theo IP (<= now: không chặn)
+        now = self.clock()
+        lst = [t for t in self._fails.get(ip, []) if now - t < _FAIL_WINDOW]
+        if lst:
+            self._fails[ip] = lst
+        else:
+            self._fails.pop(ip, None)
+        return lst[-_FAIL_LIMIT] + _FAIL_WINDOW if len(lst) >= _FAIL_LIMIT else 0.0
 
     def add(self, ip: str) -> None:
         with self._mu:
             now = self.clock()
-            self._fails.setdefault(ip, []).append(now)
+            self._fails[ip] = [t for t in self._fails.get(ip, []) if now - t < _FAIL_WINDOW] + [now]
             self._all = [t for t in self._all if now - t < _FAIL_WINDOW] + [now]
             if len(self._all) >= _GLOBAL_FAIL_LIMIT:
                 self._global_until, self._all = now + _GLOBAL_BLOCK_S, []
@@ -118,7 +130,7 @@ def create_app(pipe: Pipeline, cfg: Config) -> Flask:
         if host not in (("localhost", "127.0.0.1", "::1") if loopback_only else allowed_hosts):
             return _deny(403, "host khong hop le")
         if require_auth:
-            blocked = limiter.blocked(ip)
+            ip_b, glob_b = limiter.ip_blocked(ip), limiter.global_blocked()
             ok = False
             h = request.headers.get("Authorization", "")
             if h.startswith("Basic "):
@@ -128,13 +140,13 @@ def create_app(pipe: Pipeline, cfg: Config) -> Flask:
                           & hmac.compare_digest(pw.encode(), password))
                 except Exception:
                     ok = False
-            if blocked and not (ok and limiter.is_trusted(ip)):
-                return _deny(429, "thu lai sau", {"Retry-After": "60"})
+            if h and not ok:
+                limiter.add(ip)  # mọi lần sai đều được đếm, kể cả khi đang bị chặn
+            if ip_b or (glob_b and not (ok and limiter.is_trusted(ip))):
+                return _deny(429, "thu lai sau", {"Retry-After": str(limiter.retry_after(ip))})
             if not ok:
-                if h:
-                    limiter.add(ip)
                 return _deny(401, "can xac thuc", {"WWW-Authenticate": 'Basic realm="labview", charset="UTF-8"'})
-            if not blocked:
+            if not glob_b:
                 limiter.trust(ip)
         if request.method == "POST":
             if request.mimetype != "application/json":
@@ -176,10 +188,19 @@ def create_app(pipe: Pipeline, cfg: Config) -> Flask:
 
     @app.get("/stream.mjpg")
     def stream():
+        if request.method == "HEAD":  # chỉ trả tiêu đề, không chiếm chỗ (generator không bao giờ được lặp)
+            return Response(mimetype="multipart/x-mixed-replace; boundary=frame")
         with clients_mu:
             if clients["n"] >= cfg.max_stream_clients:
                 return _deny(503, "qua nhieu nguoi xem")
             clients["n"] += 1
+        freed = []
+
+        def release():  # idempotent: gọi từ generator và từ call_on_close (generator chưa chạy thì chỉ có cái sau)
+            with clients_mu:
+                if not freed:
+                    freed.append(1)
+                    clients["n"] -= 1
 
         def gen():
             seq, last = -1, None
@@ -197,10 +218,11 @@ def create_app(pipe: Pipeline, cfg: Config) -> Flask:
                     yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
                            + str(len(last)).encode() + b"\r\n\r\n" + last + b"\r\n")
             finally:
-                with clients_mu:
-                    clients["n"] -= 1
+                release()
 
-        return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+        resp = Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+        resp.call_on_close(release)
+        return resp
 
     @app.post("/api/lock")
     def api_lock():

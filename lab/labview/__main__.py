@@ -25,10 +25,11 @@ def parse(argv=None) -> Config:
     p.add_argument("--real-width", type=float, default=0.30, dest="real_width_m", help="be rong that gia dinh cua muc tieu (m)")
     p.add_argument("--lost-timeout", type=float, default=2.0, dest="lost_timeout_s")
     p.add_argument("--no-reacquire", action="store_true", help="tat tu gan lai khoa khi bo theo doi doi ID")
-    p.add_argument("--reacq-gate", type=float, default=1.5, help="cong khoang cach co ban (don vi: canh lon khung bao)")
-    p.add_argument("--reacq-gate-per-s", type=float, default=2.0, help="cong no them moi giay mat dau (don vi: canh khung bao)")
+    p.add_argument("--reacq-gate", type=float, default=1.0, help="cong khoang cach co ban (don vi: canh lon khung bao)")
+    p.add_argument("--reacq-gate-per-s", type=float, default=1.5, help="cong no them moi giay mat dau (don vi: canh khung bao)")
     p.add_argument("--reacq-size-min", type=float, default=0.5, help="ti le be rong (moi/cuoi) toi thieu")
     p.add_argument("--reacq-size-max", type=float, default=2.0, help="ti le be rong (moi/cuoi) toi da")
+    p.add_argument("--reacq-min-conf", type=float, default=None, help="conf toi thieu cua ung vien gan lai (mac dinh = --conf)")
     p.add_argument("--click-margin", type=float, default=12.0, dest="click_margin_px")
     p.add_argument("--no-loop", action="store_true", help="khong lap lai video")
     p.add_argument("--no-pace", action="store_true", help="doc video nhanh nhat co the (do hieu nang)")
@@ -44,14 +45,15 @@ def parse(argv=None) -> Config:
                  max_width=a.max_width, hfov_deg=a.hfov_deg, fx=a.fx, fy=a.fy, cx=a.cx, cy=a.cy,
                  real_width_m=a.real_width_m, lost_timeout_s=a.lost_timeout_s,
                  reacquire=not a.no_reacquire, reacq_gate=a.reacq_gate, reacq_gate_per_s=a.reacq_gate_per_s,
-                 reacq_size_min=a.reacq_size_min, reacq_size_max=a.reacq_size_max,
+                 reacq_size_min=a.reacq_size_min, reacq_size_max=a.reacq_size_max, reacq_min_conf=a.reacq_min_conf,
                  click_margin_px=a.click_margin_px, loop=not a.no_loop, pace=not a.no_pace,
                  host=a.host, port=a.port, allow_network=a.allow_network, allowed_hosts=list(a.allowed_hosts),
                  log_file=a.log_file)
     cfg.password = load_password(a.password_file)
-    if a.allow_network and a.host is None:
-        print("CANH BAO: --allow-network ma khong chi --host: dang nghe MOI giao dien mang. "
-              "Nen dung --host <dia chi mang noi bo cua may nay> (va --allowed-host <ten khach go> neu can).", file=sys.stderr)
+    if a.allow_network and a.host in (None, "0.0.0.0", "::"):
+        print("CANH BAO: --allow-network ma khong chi --host (hoac --host 0.0.0.0): dang nghe MOI giao dien mang. "
+              "Nen dung --host <dia chi mang noi bo cua may nay>. Voi 0.0.0.0, truy cap bang dia chi IP se bi 403 "
+              "tru khi them --allowed-host <IP> (them tung IP/ten khach go).", file=sys.stderr)
     return validate(cfg)
 
 

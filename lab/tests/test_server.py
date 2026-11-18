@@ -238,11 +238,16 @@ def test_global_limit_across_many_ips_and_owner_still_gets_in():
 
 def test_owner_not_locked_out_by_own_typos():
     c, *_ = build(password=PW, allow_network=True)
+    now = [1000.0]
+    c.application.extensions["labview.limiter"].clock = lambda: now[0]
     assert get(c, auth()).status_code == 200
     for _ in range(5):
         assert get(c, auth("typo-typo-typo")).status_code == 401
-    assert get(c, auth("typo-typo-typo")).status_code == 429
-    assert get(c, auth()).status_code == 200                                       # trước đây: 429
+    r = get(c, auth("typo-typo-typo"))
+    assert r.status_code == 429 and int(r.headers["Retry-After"]) >= 1
+    assert get(c, auth()).status_code == 429                                       # đang bị chặn theo IP: đúng cũng 429
+    now[0] += 61
+    assert get(c, auth()).status_code == 200                                       # hết chặn: vào được
 
 
 def test_password_min_length_12():
@@ -347,3 +352,48 @@ def test_state_reports_reacquired_lock_through_pipeline():
     L = c.get("/api/state").get_json()["lock"]
     assert L["track_id"] == 20 and L["visible"] and L["state"] == "reacquired" and L["reacquired"] == 1
     assert c.get("/snapshot.jpg").data[:2] == b"\xff\xd8"
+
+
+def test_trusted_ip_over_ip_limit_cannot_bruteforce():
+    c, *_ = build(password=PW, allow_network=True)
+    now = [1000.0]
+    c.application.extensions["labview.limiter"].clock = lambda: now[0]
+    assert get(c, auth()).status_code == 200            # đăng nhập đúng một lần -> IP tin cậy
+    for _ in range(5):
+        assert get(c, auth("typo-typo-typo")).status_code == 401
+    codes = [get(c, auth("guess-%03d-xxxxx" % i)).status_code for i in range(299)]
+    codes.append(get(c, auth()).status_code)            # lần cuối là mật khẩu ĐÚNG
+    assert codes == [429] * 300                         # 0 lần 200 trong thời gian chặn
+    now[0] += 61
+    assert get(c, auth()).status_code == 200            # hết chặn: đúng thì vào
+
+
+# ---------------- (B1) HEAD và ngoại lệ không làm rò chỗ
+def test_head_stream_does_not_take_slots():
+    c, pipe, *_ = build(max_stream_clients=2)
+    pipe._done = True
+    for _ in range(10):
+        r = c.head("/stream.mjpg")
+        assert r.status_code == 200
+    assert c.get("/stream.mjpg").status_code == 200
+
+
+def test_stream_slot_released_on_exception_in_generator(monkeypatch):
+    c, pipe, *_ = build(max_stream_clients=1)
+    def boom(*a, **k): raise RuntimeError("loi giua chung")
+    real = pipe.wait_frame
+    monkeypatch.setattr(pipe, "wait_frame", boom)
+    for _ in range(3):
+        with pytest.raises(Exception):
+            c.get("/stream.mjpg")
+    monkeypatch.setattr(pipe, "wait_frame", real)
+    pipe._done = True
+    assert c.get("/stream.mjpg").status_code == 200
+
+
+def test_warn_for_explicit_all_interfaces_host(monkeypatch, capsys):
+    from labview.__main__ import parse
+    monkeypatch.setenv("LABVIEW_PASSWORD", PW)
+    parse(["--source", "file:x", "--allow-network", "--host", "0.0.0.0"])
+    err = capsys.readouterr().err
+    assert "403" in err and "--allowed-host" in err
