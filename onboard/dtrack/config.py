@@ -35,6 +35,8 @@ class GuidanceConfig:
     target_elev_ref_deg: float = 4.0   # do, goc nang MONG MUON cua muc tieu so voi mat phang ngang cua drone khi khong tang/giam toc
     elev_accel_comp: float = 1.0       # he so bu nghieng mui theo gia toc lenh; = 0 khi camera tu on dinh pitch (khop gat), dat tu dong trong AppConfig
     elev_ref_max_deg: float = 8.0      # do, goc nang mong muon bi cat trong +-gia tri nay (bu truoc mui chui khi tang toc theo GIA TOC LENH, khong theo tu the do)
+    elev_ramp_enabled: bool = False    # bat/tat doc chuyen tiep goc nang tham chieu sau khi khoa muc tieu
+    elev_ramp_dps: float = 2.0         # do/s, toc do doc chuyen tiep (diem cuoi = target_elev_ref_deg)
     # --- gioi han ---
     v_max_mps: float = 30.0            # m/s, toc do ngang toi da cua lenh
     climb_max_mps: float = 4.0         # m/s, toc do len toi da
@@ -109,6 +111,22 @@ class CameraConfig:
 
 
 @dataclass
+class GimbalConfig:
+    """Khop gat chu dong mot truc (buoc 3 thiet ke). Bat bang enabled=True; hai co cung bat thi validate() tu choi."""
+    enabled: bool = False
+    delta_min_deg: float = 10.0
+    delta_max_deg: float = 90.0
+    delta_init_deg: float = 90.0
+    hold_offset_deg: float = 0.0
+    frozen: bool = False
+    rate_dps: float = 300.0
+    lag_s: float = 0.05
+    dead_time_s: float = 0.02
+    quant_deg: float = 0.1
+    slow_factor: float = 1.0
+
+
+@dataclass
 class TargetShapeConfig:
     """Hop bao ba canh cua muc tieu that (mac dinh khoi 0.30 m = hanh vi cu). Bo uoc luong khoang cach dung span_m."""
     span_m: float = 0.30      # m, ngang vuong goc mui (sai canh)
@@ -134,14 +152,16 @@ class AppConfig:
     supervisor: SupervisorConfig = field(default_factory=SupervisorConfig)
     mavlink: MavlinkConfig = field(default_factory=MavlinkConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
+    gimbal: GimbalConfig = field(default_factory=GimbalConfig)
     target_shape: TargetShapeConfig = field(default_factory=TargetShapeConfig)
     acceptance: AcceptanceConfig = field(default_factory=AcceptanceConfig)
 
     def __post_init__(self) -> None:
-        # goc camera chi nhap mot noi (camera); guidance dung cung gia tri
+        if self.gimbal.enabled:
+            self.camera.tilt_up_deg = 0.0
         self.guidance.cam_tilt_up_deg = self.camera.tilt_up_deg
-        if self.camera.gimbal_enabled:
-            self.guidance.elev_accel_comp = 0.0     # camera da on dinh pitch: khong bu truoc lan nua
+        if self.camera.gimbal_enabled or self.gimbal.enabled:
+            self.guidance.elev_accel_comp = 0.0
 
 
 def make_camera(tilt_up_deg: float = 0.0, fx: float = 2319.0, fy: Optional[float] = None,
@@ -184,6 +204,26 @@ def validate(cfg: AppConfig) -> None:
         raise ValueError("loop_hz / loop_slow_s phai > 0")
     if cfg.mavlink.resend_hz < 10.0:
         raise ValueError("resend_hz phai >= 10 (GUIDED dung sau 3 s khong co lenh)")
+    # --- khop gat chu dong ---
+    gm = cfg.gimbal
+    if cfg.camera.gimbal_enabled and gm.enabled:
+        raise ValueError("camera.gimbal_enabled va gimbal.enabled khong duoc cung bat")
+    if not (0 < gm.delta_min_deg < gm.delta_max_deg <= 90):
+        raise ValueError("gimbal: can 0 < delta_min_deg < delta_max_deg <= 90")
+    if not (gm.delta_min_deg <= gm.delta_init_deg <= gm.delta_max_deg):
+        raise ValueError("gimbal: can delta_min_deg <= delta_init_deg <= delta_max_deg")
+    if not (math.isfinite(gm.rate_dps) and gm.rate_dps > 0):
+        raise ValueError("gimbal.rate_dps phai > 0")
+    if not (math.isfinite(gm.lag_s) and gm.lag_s >= 0):
+        raise ValueError("gimbal.lag_s phai >= 0")
+    if not (math.isfinite(gm.dead_time_s) and gm.dead_time_s >= 0):
+        raise ValueError("gimbal.dead_time_s phai >= 0")
+    if not (math.isfinite(gm.quant_deg) and gm.quant_deg >= 0):
+        raise ValueError("gimbal.quant_deg phai >= 0")
+    if not (math.isfinite(gm.slow_factor) and gm.slow_factor > 0):
+        raise ValueError("gimbal.slow_factor phai > 0")
+    if g.elev_ramp_enabled and not (math.isfinite(g.elev_ramp_dps) and g.elev_ramp_dps > 0):
+        raise ValueError("guidance.elev_ramp_dps phai > 0 khi bat")
 
 
 def _fill(obj: Any, data: Dict[str, Any], path: str) -> None:
