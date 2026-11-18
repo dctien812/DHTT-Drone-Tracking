@@ -28,26 +28,27 @@ def tri(t, a, b, c):
     return (t - a) / (b - a) if t < b else (c - t) / (c - b)
 
 
-def make_run(tmp, d_fn=lambda t: 25.0, pitch_fn=None, nan_rows=0, app_rc=0, dive=True):
+def make_run(tmp, d_fn=lambda t: 25.0, pitch_fn=None, nan_rows=0, app_rc=0, dive=True, t_dive=T_DIVE, vd_scale=1.0,
+             ch_dalt=lambda t: 0.0, ev_del=(), ev_set=None):
     """Ghi thu muc ket qua tong hop. d_fn(t) = d3 chaser-muc tieu (chaser o phia sau, thap hon muc tieu goc ELEV)."""
     tilt = math.radians(15.0)
     rows, prev = [], None
     n_rows = int((T_END - T0) * RATE)
     # quy dao muc tieu tich phan tang dan
     n, alt, dt = 0.0, ALT0, 1.0 / RATE
-    vd_dive = SPEED * math.sin(math.radians(DIVE_DEG))
+    vd_dive = SPEED * math.sin(math.radians(DIVE_DEG)) * vd_scale
     t_dive_len = DROP / vd_dive
     for i in range(n_rows + 1):
         t = T0 + i * dt
         vn, vd = SPEED, 0.0
-        if dive and T_DIVE <= t < T_DIVE + t_dive_len:
+        if dive and t_dive <= t < t_dive + t_dive_len:
             vn, vd = SPEED * math.cos(math.radians(DIVE_DEG)), vd_dive
         elif t >= T_STOP:
             vn = max(0.0, SPEED - DECEL * (t - T_STOP))
-        if t >= T_DIVE + t_dive_len and dive:
+        if t >= t_dive + t_dive_len and dive:
             vd = 0.0
         d = d_fn(t)
-        cn, calt = n - d * math.cos(ELEV), alt - d * math.sin(ELEV)
+        cn, calt = n - d * math.cos(ELEV), alt - d * math.sin(ELEV) - ch_dalt(t)
         pitch = ELEV - tilt if pitch_fn is None else pitch_fn(t)
         rows.append([t, n, 0.0, alt, vn, 0.0, vd, cn, 0.0, calt, 0.0, 0.0, 0.0, 0.0, pitch, 0.0,
                      d, d * math.cos(ELEV), 1, 4])
@@ -68,9 +69,12 @@ def make_run(tmp, d_fn=lambda t: 25.0, pitch_fn=None, nan_rows=0, app_rc=0, dive
         for i in range(int((T_END - T0) * 30)):
             w.writerow(["%.4f" % (T0 + i / 30.0), "0.033", "track", "25.0", "1", "1", "GUIDED", "track", "0"])
     ev = {"scenario": "none", "speed": SPEED, "straight": True, "t_go": T_GO, "t_ws": T_WS,
-          "t_stop_target": T_STOP, "t_both_stopped": T_BOTH}
+          "t_stop_target": T_STOP, "t_both_stopped": T_BOTH, "both_stopped": True}
     if dive:
-        ev.update({"t_dive_cmd": T_DIVE, "dive_deg": DIVE_DEG, "dive_drop_m": DROP})
+        ev.update({"t_dive_cmd": t_dive, "dive_deg": DIVE_DEG, "dive_drop_m": DROP})
+    ev.update(ev_set or {})
+    for k in ev_del:
+        ev.pop(k, None)
     json.dump(ev, open(os.path.join(tmp, "events.json"), "w"))
     open(os.path.join(tmp, "app.rc"), "w").write("%d\n" % app_rc)
     return str(tmp)
@@ -156,3 +160,54 @@ def test_old_scenario_final_brake_is_info_unless_score_final(tmp_path, capsys):
     assert rc == 0 and "tham khao" in out and "KHONG dat tham khao" in out
     rc2, out2 = run(d, capsys, "--score-final")
     assert rc2 == 1 and verdict(out2, "giam toc cuoi: d3 max") == "FAIL"
+
+def test_dive_ok_new_criteria_pass(tmp_path, capsys):
+    rc, out = run(make_run(tmp_path), capsys)
+    assert rc == 0, out
+    for lab in ("both_stopped", "toc do ha dinh", "ra khoi khung trong pha bay bang", "do cao chaser >= do cao dich"):
+        assert verdict(out, lab) == "PASS", (lab, out)
+    assert "d3 max doan bay deu truoc lenh cam" in out
+
+
+def test_dive_loss_only_in_level_flight_phase_fails(tmp_path, capsys):
+    """Mat muc tieu chi o pha bay bang (sau pha cam): truoc day van PASS."""
+    tilt = math.radians(15.0)
+    d = make_run(tmp_path, t_dive=1025.0, pitch_fn=lambda t: math.radians(60) if 1041.0 <= t <= 1045.0 else ELEV - tilt)
+    rc, out = run(d, capsys)
+    assert rc == 1, out
+    assert verdict(out, "ra khoi khung trong pha cam") == "PASS"
+    assert verdict(out, "ra khoi khung trong pha bay bang") == "FAIL"
+
+
+@pytest.mark.parametrize("key", ["t_dive_cmd", "t_stop_target", "dive_drop_m"])
+def test_dive_missing_event_fails(tmp_path, capsys, key):
+    rc, out = run(make_run(tmp_path, ev_del=(key,)), capsys)
+    assert rc == 1, out
+    assert verdict(out, "events.json du moc") == "FAIL" and key in out
+
+
+def test_dive_deg_without_dive_cmd_fails(tmp_path, capsys):
+    """events.json co dive_deg > 0 nhung thieu t_dive_cmd: truoc day roi ve nhanh cu va PASS."""
+    rc, out = run(make_run(tmp_path, ev_del=("t_dive_cmd",)), capsys)
+    assert rc == 1 and "t_dive_cmd" in out and "KET QUA: FAIL" in out
+
+
+def test_dive_both_stopped_false_fails(tmp_path, capsys):
+    rc, out = run(make_run(tmp_path, ev_set={"both_stopped": False}), capsys)
+    assert rc == 1 and verdict(out, "both_stopped") == "FAIL"
+
+
+def test_dive_low_peak_descent_rate_fails(tmp_path, capsys):
+    """Ha du do cao (>= 0.8 * drop) nhung toc do ha dinh chi 60% lenh: FAIL dung tieu chi toc do."""
+    rc, out = run(make_run(tmp_path, vd_scale=0.6), capsys)
+    assert rc == 1, out
+    assert verdict(out, "muc tieu thuc su cam xuong") == "PASS"
+    assert verdict(out, "toc do ha dinh") == "FAIL"
+
+
+def test_dive_chaser_below_relative_floor_fails(tmp_path, capsys):
+    """Chaser cao hon san tuyet doi 9 m nhung thap hon (do cao dich - 10 m): FAIL tieu chi moi."""
+    rc, out = run(make_run(tmp_path, ch_dalt=lambda t: 15.0 if t >= 1040.0 else 0.0), capsys)
+    assert rc == 1, out
+    assert verdict(out, "do cao chaser >= san") == "PASS"
+    assert verdict(out, "do cao chaser >= do cao dich") == "FAIL"

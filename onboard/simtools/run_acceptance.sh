@@ -3,7 +3,7 @@
 # Dung: run_acceptance.sh            (chay MATRIX mac dinh)
 #       MATRIX="1:none 2:none" run_acceptance.sh   (chay lai mot phan)
 # Moi muc cua MATRIX = seed:kich_ban[:che_do]; che_do = soft (muc tieu phanh mem, TARGET_DECEL m/s^2, mac dinh 4)
-#   hoac diveNN (muc tieu bay thang roi cam NN do, do cao hanh trinh 70 m, ha 40 m, cuoi chuyen giam toc 1.5 m/s^2; kich_ban phai la none;
+#   hoac diveNN (NN nguyen duong; che do khac -> bao loi, thoat 2 truoc khi chay gi) (muc tieu bay thang roi cam NN do, do cao hanh trinh 70 m, ha 40 m, cuoi chuyen giam toc 1.5 m/s^2; kich_ban phai la none;
 #   cham them pha cam + pha giam toc cuoi, xem docs/scenario_dive.md). Vi du: MATRIX="1:none:dive15 1:none:dive25".
 # Mac dinh: 3 seed x dive15, 3 seed x dive25, blackout, disengage (ma tran cu: MATRIX="1:none 2:none 3:none 1:blackout 1:disengage 1:none:soft").
 # PASS = ma thoat 0 VA result.txt co "KET QUA: PASS" (thieu thu muc/result.txt -> FAIL).
@@ -17,6 +17,13 @@ PROFILE="${PROFILE:-accept_gimbal_r25}"
 SPEED="${SPEED_MS:-10}"
 MATRIX="${MATRIX:-1:none:dive15 2:none:dive15 3:none:dive15 1:none:dive25 2:none:dive25 3:none:dive25 1:blackout 1:disengage}"
 TARGET_DECEL="${TARGET_DECEL:-4}"
+for spec in $MATRIX; do   # kiem che do TRUOC khi khoi dong gi: chi '', soft, diveNN (NN nguyen duong); khac -> loi, thoat 2
+  IFS=: read -r _s _k mode <<<"$spec"
+  if [ -n "$mode" ] && [ "$mode" != "soft" ] && ! [[ "$mode" =~ ^dive[1-9][0-9]*$ ]]; then
+    echo "che do khong hop le '$mode' trong '$spec' (chi: soft, diveNN voi NN nguyen duong, vd dive15): thoat, khong chay gi" >&2
+    exit 2
+  fi
+done
 mkdir -p "$OUT_ROOT"
 echo "$$" > "$OUT_ROOT/_matrix.pid"
 SUM="$OUT_ROOT/_acceptance_$(date +%Y%m%d_%H%M%S).txt"
