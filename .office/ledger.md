@@ -420,3 +420,7 @@
 - Bất thường: lần 9 (δ 16,3°, 141°/s) và lần 14 (δ 19,4°, 80°/s) có δ rơi sâu kiểu phát hiện giả như d25 s2 đợt B.
 - Dải khớp 10–110°: 07 (Opus) sửa test trước (17 ca đỏ) → 05 sửa `gimbal.py:17`, `config.py:118,211-212` (cho phép tới 120) → 08 DUYỆT: tự chạy 698 passed; test không bị nới lỏng; mã không ngầm giả định δ ≤ 90°; quét 27183 tư thế bay bình thường: 0 ca có hai nghiệm cùng trong dải, nhảy δ lớn nhất 0,297° mỗi 0,25° θ; 10 file cấu hình mô phỏng nhận mặc định mới 110. Nhỏ ghi sổ: không còn ca mức app kiểm sat=1 ở mặc định; ở δ = 110° camera có thể bị thân/càng che (giả định phần cứng, ngoài mô phỏng).
 - Mở đợt D bước 7: chạy lại lõi với δ_max 110°: giữ 25 m và 15 m, dive15/dive25 × 3 seed, thêm blackout:soft và disengage:soft ở 15 m.
+
+## 2026-11-18 ~22:15 · TẠM DỪNG theo yêu cầu người dùng (mai làm tiếp)
+- Trưởng phòng đặt `onboard/simtools/out/_STOP`; nhắn 07 để lần đang chạy (đợt D lần 4) kết thúc rồi dừng. Đợt D xong 3/14 lúc đặt cờ, cả ba PASS: giữ 25 m, dive15 s1–s3, δ_max 110°, giảm tốc cuối ra khung 0,00 s (trước: 12,32 / 7,49 / 8,13 s), δ tới 110,0°.
+- Cập nhật `.office/checkpoint.md` (mục "CẬP NHẬT LÚC TẠM DỪNG").

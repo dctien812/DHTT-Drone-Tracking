@@ -1,4 +1,4 @@
-# Checkpoint: tổng hợp phiên 5 (2026-11-18, khoảng 21:00; người dùng hỏi tổng hợp, KHÔNG phải dừng)
+# Checkpoint: cuối phiên 5 (2026-11-18, khoảng 22:15; TẠM DỪNG theo yêu cầu người dùng, mai làm tiếp)
 
 Tên dự án: Drone Tracking (tên "Drone Interceptor" đã bỏ trong ngày). Giờ hạn mức đặt lại: không ghi nhận.
 Phiên sau đọc: file này, rồi phần cuối `.office\ledger.md` từ mục "PHIÊN 5 bắt đầu". Thiết kế bước 3–6 và mọi quyết định bổ sung: `.office\design-gimbal-steps-3-6.md`.
@@ -48,3 +48,22 @@ Chưa bắt đầu:
 3. Chạy lại 6 lần lõi với 110°, thêm khoảng cách giữ tốt nhất từ đợt C; điều tra việc leo cao khi mất hình.
 4. Báo cáo cuối giai đoạn 1, DỪNG chờ người dùng xem trước khi sang giai đoạn 2.
 5. Khi Pi có nguồn mới: đọc log lần sập, chạy 2 luồng, đo 60 s, kiểm đường hầm.
+
+---
+# CẬP NHẬT LÚC TẠM DỪNG (đọc phần này trước; nó thắng phần trên nếu mâu thuẫn)
+
+## Việc phải làm đầu tiên ở phiên sau
+- XÓA `onboard\simtools\out\_STOP` trước khi chạy mô phỏng. Kiểm `pgrep -x arducopter` trống và `git status` sạch trong WSL `Ubuntu-24.04`.
+
+## Thay đổi so với phần trên
+- Đợt C XONG (14 lần, 2 PASS / 12 FAIL với δ_max 90°): đối chứng khớp đứng yên thất bại ở pha cắm như yêu cầu; servo chậm ×2 vẫn đạt pha cắm; giữ 15 m là mức gần đứng vững nhất (d3 nhỏ nhất 10,3–11,0 m, sàn 6 m; không dính lỗi trôi xa > 40 m); 12 m bắt đầu ra khung khi cắm 25°. Chi tiết trong sổ ghi.
+- Dải khớp 10–110° XONG và đã commit `909ab41` (test trước → 05 sửa 3 dòng → 08 duyệt; cả bộ 698 passed). Bộ test dự án không còn đỏ.
+- Đợt D (δ_max 110°) ĐANG DỞ, dừng bằng cờ `_STOP`: đã xong 3/14, cả ba PASS toàn bộ: giữ 25 m, dive15 seed 1, 2, 3 (`out/20261118_145823`, `150242`, `150701`): giảm tốc cuối ra khung 0,00 s (đợt B với 90°: 12,32 / 7,49 / 8,13 s); δ thực dùng tới 110,0°, chạm giới hạn 2 lần (119–142 mẫu); d3 giảm tốc cuối 20,8–26,1 m. Lần 4 (giữ 25 m, dive25 seed 1) đang chạy lúc đặt cờ: xem báo cáo của 07 ở cuối sổ ghi.
+- CHƯA chạy của đợt D: `plane_r25_gimbal_e12` dive25 seed 2, 3 (và seed 1 nếu lần 4 không trọn); `plane_r15_gimbal_e12` dive15 seed 1, 2, 3, dive25 seed 1, 2, 3, `1:blackout:soft`, `1:disengage:soft`. Script: `onboard\simtools\out\run_gimbal_batch*.sh` (không vào git; cấu hình ở `onboard\simtools\configs\`).
+
+## Bước tiếp theo (thay danh sách ở trên)
+1. Xóa `_STOP`, chạy nốt đợt D (07), 08 đối chiếu số đo đợt A–D với tiêu chí nghiệm thu.
+2. 10 điều tra vì sao drone leo cao khi mất hình (COAST/LOST).
+3. Báo cáo cuối giai đoạn 1 (kèm đề nghị mặc định: giữ 15 m, nhìn xuống 12°, khớp 10–110°), DỪNG chờ người dùng trước khi sang giai đoạn 2.
+4. Pi: khi có nguồn mới, đọc log lần sập, chạy trang lab 2 luồng, đo 60 s, kiểm đường hầm (tắt demo cũ ở cổng 8080 trước).
+5. Cập nhật `HANDOFF.md`, `README.md` gốc.
