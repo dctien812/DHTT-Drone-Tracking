@@ -52,7 +52,7 @@ Lập: 02 planner, 2026-11-18 (phiên 5), chỉ đọc mã, chưa chạy gì. Tr
   - `Guidance.__init__/reset` (`:285-294`) tạo và reset ramp nếu `cfg.elev_ramp_enabled`.
   - `Guidance.step` (`:340`) gọi `ramp.update(track.t, elev_los)` trước `compute_guidance_ex` (`:361`). `step_blind` (`:326`) gọi `ramp.update(t, None)` rồi truyền giá trị đó (`:334`). Ramp chưa khởi động thì `elev_ref_deg=None` (đường cũ).
   - Thuộc tính `last_elev_ref_deg` để bước 5 ghi log. Cờ tắt thì kết quả y hệt cũ.
-- Test đơn vị: (1) khởi động từ elev đo, không nhảy; (2) bước ≤ rate·dt, đơn điệu, dừng đúng `final`, cả hai chiều; (3) không khởi động khi chưa có TRACK; (4) `t` lặp/lùi không đổi; (5) `dt` lớn bị chặn bằng `dt_max`; (6) `reset`; (7) NaN không làm hỏng; (8) ramp tắt thì lệnh bit-bằng bản cũ; (9) ramp bật, elev_los > e_ref thì vận tốc đứng dương (xuống); lệnh leo ≤ `climb_max` (`:272`); (10) `step_blind` vẫn dùng ramp.
+- Test đơn vị: (1) khởi động từ elev đo, không nhảy; (2) bước ≤ rate·dt, đơn điệu, dừng đúng `final`, cả hai chiều; (3) không khởi động khi chưa có TRACK; (4) `t` lặp/lùi không đổi; (5) `dt` lớn bị chặn bằng `dt_max`; (6) `reset`; (7) NaN không làm hỏng; (8) ramp tắt thì lệnh bit-bằng bản cũ; (9) ramp bật, elev_los > e_ref thì drone LEO (`vel_ned[2] < 0`, theo dấu của mã hiện có `guidance.py:179-182` và `test_guidance.py:235-241`; bản thiết kế đầu ghi ngược, đã sửa 2026-11-18); lệnh leo ≤ `climb_max` (`:272`); (10) `step_blind` vẫn dùng ramp.
 
 ## Bước 5: nối vào app + `gimbal.csv`
 - SỬA `dtrack\app.py`:

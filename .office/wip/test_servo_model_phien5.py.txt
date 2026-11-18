@@ -1,0 +1,310 @@
+"""Mo hinh servo khop gat roi rac (simtools.servo_model) - BUOC 3, TEST VIET TRUOC (pha do).
+
+Dac ta: .office/design-gimbal-steps-3-6.md muc "Buoc 3".
+  ServoModel(delta_init_rad, delta_min_rad, delta_max_rad, rate_rad_s, lag_s, dead_time_s, quant_rad, slow_factor=1.0)
+  ServoModel.from_config(GimbalConfig)
+  command(t, delta_rad) -> float : kep [min,max] roi luong tu round(x/quant)*quant; tra lenh da luong tu;
+                                   t_cmd = max(t, t_cmd truoc)
+  advance(t) -> float            : lan dau dat _t=t va tra delta_init; t <= _t thi tra gia tri hien tai
+  reset(delta_init_rad=None), last_rate_rad_s
+  Lenh hieu dung = lenh moi nhat co t_cmd <= t - dead_time (chua co -> delta_init); tre bac nhat roi gioi han toc do
+  (nhu gimbal_model.py:50-52), buoc con <= 5 ms. slow_factor: rate/slow, lag*slow, dead*slow.
+  SimGimbalPort(servo): command(t, delta_rad), angle(t), last_cmd, rate(), reset().
+
+Thong so servo la GIA DINH: moi test truyen tham so tuong minh (khong dua vao mac dinh cua GimbalConfig).
+"""
+import math
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+D = math.radians
+TOL = 1e-9          # rad, sai so so hoc cho phep khi so gia tri phai bang dung
+
+
+def _sm():
+    try:
+        import simtools.servo_model as sm
+    except ImportError as exc:
+        pytest.fail("chua co simtools.servo_model: %s" % exc)
+    return sm
+
+
+def servo(init=50.0, lo=10.0, hi=90.0, rate=300.0, lag=0.05, dead=0.0, quant=0.1, slow=1.0):
+    """ServoModel voi tham so theo DO (goc, toc do) va giay; doi sang rad o day."""
+    return _sm().ServoModel(delta_init_rad=D(init), delta_min_rad=D(lo), delta_max_rad=D(hi),
+                            rate_rad_s=D(rate), lag_s=lag, dead_time_s=dead, quant_rad=D(quant),
+                            slow_factor=slow)
+
+
+def ticks(t0, t1, dt):
+    n = int(round((t1 - t0) / dt))
+    return [t0 + k * dt for k in range(n + 1)]
+
+
+# ------------------------------------------------------------- (1) han hanh trinh
+def test_command_return_is_clamped_to_limits():
+    m = servo(lo=10.0, hi=90.0)
+    m.advance(0.0)
+    assert m.command(0.0, D(120.0)) == pytest.approx(D(90.0), abs=TOL)
+    assert m.command(0.1, D(-30.0)) == pytest.approx(D(10.0), abs=TOL)
+
+
+def test_actual_angle_never_leaves_limits_with_out_of_range_commands():
+    # lenh 120 do roi -30 do, servo nhanh (300 do/s, tre 20 ms): delta phai dung o 90 roi 10, khong vot
+    m = servo(init=50.0, lo=10.0, hi=90.0, rate=300.0, lag=0.02, dead=0.0)
+    seen = [m.advance(0.0)]
+    m.command(0.0, D(120.0))
+    for t in ticks(0.001, 1.0, 0.001):
+        seen.append(m.advance(t))
+    assert seen[-1] == pytest.approx(D(90.0), abs=1e-6)
+    m.command(1.0, D(-30.0))
+    for t in ticks(1.001, 2.0, 0.001):
+        seen.append(m.advance(t))
+    assert seen[-1] == pytest.approx(D(10.0), abs=1e-6)
+    assert max(seen) <= D(90.0) + TOL and min(seen) >= D(10.0) - TOL
+
+
+# ------------------------------------------------------------- (2) gioi han toc do
+def test_40deg_jump_in_10ms_moves_at_most_rate_times_dt():
+    # tre bac nhat muon 40*(1-e^(-5ms/50ms)) = 3.81 do moi buoc con 5 ms > 300*0.005 = 1.5 do -> gioi han toc do quyet:
+    # dung 300 do/s * 0.01 s = 3.0 do
+    m = servo(init=50.0, rate=300.0, lag=0.05, dead=0.0)
+    d0 = m.advance(0.0)
+    m.command(0.0, D(90.0))
+    d1 = m.advance(0.01)
+    assert abs(d1 - d0) <= D(300.0) * 0.01 + TOL
+    assert d1 - d0 == pytest.approx(D(3.0), abs=1e-6)
+
+
+def test_last_rate_reports_rate_limited_speed():
+    m = servo(init=50.0, rate=300.0, lag=0.05, dead=0.0)
+    m.advance(0.0)
+    m.command(0.0, D(90.0))
+    m.advance(0.01)
+    assert abs(m.last_rate_rad_s) <= D(300.0) + 1e-6
+    assert m.last_rate_rad_s == pytest.approx(D(300.0), rel=1e-6)     # (3 do / 0.01 s)
+
+
+# ------------------------------------------------------------- (3) tre bac nhat
+@pytest.mark.parametrize("n_tau,frac", [(1, 1.0 - math.exp(-1.0)), (2, 1.0 - math.exp(-2.0))])
+def test_first_order_lag_reaches_63_percent_after_one_tau(n_tau, frac):
+    # toc do rat lon (1e6 do/s) -> chi con tre: delta = 50 + 10*(1 - e^(-t/tau)); tau = 0.05 s
+    # 1 tau: 1-e^-1 = 0.6321 -> 56.321 do; 2 tau: 1-e^-2 = 0.8647 -> 58.647 do. Ket qua chinh xac voi nghiem mu tung buoc con.
+    m = servo(init=50.0, rate=1e6, lag=0.05, dead=0.0)
+    m.advance(0.0)
+    m.command(0.0, D(60.0))
+    d = m.advance(0.05 * n_tau)
+    assert d == pytest.approx(D(50.0 + 10.0 * frac), abs=1e-6)
+
+
+# ------------------------------------------------------------- (4) thoi gian chet
+def test_command_has_no_effect_before_t_cmd_plus_dead_time():
+    # dead 0.03 s (khac mac dinh 0.02), lenh luc 0.1 -> khong doi gi truoc 0.13
+    m = servo(init=50.0, rate=300.0, lag=0.05, dead=0.03)
+    m.advance(0.0)
+    m.advance(0.1)
+    m.command(0.1, D(80.0))
+    for t in (0.11, 0.12, 0.125, 0.129):
+        assert m.advance(t) == D(50.0)
+    assert m.advance(0.15) > D(50.0) + D(0.5)          # sau 0.13 + 20 ms da quay ro rang (toi da 6 do)
+
+
+def test_command_with_earlier_time_is_queued_after_previous_command():
+    # t_cmd = max(t, t_cmd truoc): lenh B goi voi t=0.1 sau lenh A (t=0.2) -> t_cmd(B) = 0.2.
+    # dead 0.03: truoc 0.23 giu 50 do (B KHONG co tac dung tu 0.13); sau do lenh hieu dung la B (moi nhat), khong phai A.
+    m = servo(init=50.0, rate=300.0, lag=0.02, dead=0.03)
+    m.advance(0.0)
+    m.command(0.2, D(80.0))      # A
+    m.command(0.1, D(20.0))      # B
+    for t in (0.13, 0.15, 0.2, 0.229):
+        assert m.advance(t) == D(50.0)
+    d = m.advance(0.5)
+    assert d == pytest.approx(D(20.0), abs=D(0.05))
+
+
+# ------------------------------------------------------------- (5) luong tu
+@pytest.mark.parametrize("cmd_deg,expect_deg", [(45.04, 45.0), (45.06, 45.1), (44.96, 45.0)])
+def test_command_is_quantized(cmd_deg, expect_deg):
+    # round(x/q)*q voi q = 0.1 do: 450.4 -> 450, 450.6 -> 451, 449.6 -> 450
+    m = servo(init=50.0, quant=0.1)
+    m.advance(0.0)
+    assert m.command(0.0, D(cmd_deg)) == pytest.approx(D(expect_deg), abs=TOL)
+
+
+def test_actual_angle_settles_on_quantized_command():
+    m = servo(init=50.0, rate=300.0, lag=0.02, dead=0.0, quant=0.1)
+    m.advance(0.0)
+    m.command(0.0, D(45.04))
+    for t in ticks(0.001, 1.0, 0.001):
+        d = m.advance(t)
+    assert d == pytest.approx(D(45.0), abs=D(1e-4))      # 45.0, khong phai 45.04 (cach 0.04 do)
+
+
+# ------------------------------------------------------------- (6) slow_factor
+def _step_trace(m, t_end, dt=0.001):
+    out = [m.advance(0.0)]
+    m.command(0.0, D(90.0))
+    for t in ticks(dt, t_end, dt):
+        out.append(m.advance(t))
+    return out
+
+
+def test_slow_factor_2_is_time_scaled_response():
+    # rate/2, lag*2, dead*2 la co gian truc thoi gian he so 2: delta_slow(2t) = delta_fast(t) (lien tuc: dung).
+    # Roi rac: thoi diem lenh bat dau tac dung co the lech toi 1 nhip goi (1 ms) -> 1 ms * 300 do/s = 0.3 do; cho 0.5 do.
+    # (do tren ban tham chieu dot bien: dead khong nhan slow -> lech 2.85 do; lag khong nhan slow -> 2.70 do)
+    fast = _step_trace(servo(init=50.0, rate=300.0, lag=0.05, dead=0.02, slow=1.0), 0.4)
+    slow = _step_trace(servo(init=50.0, rate=300.0, lag=0.05, dead=0.02, slow=2.0), 0.8)
+    err = max(abs(slow[2 * k] - fast[k]) for k in range(len(fast)))
+    assert err <= D(0.5), "sai %.3f do" % math.degrees(err)
+
+
+def test_slow_factor_2_doubles_time_to_90_percent():
+    # thoi gian toi 90% buoc 50 -> 90 (86 do): ty so slow/fast ~ 2 (dung sai 0.1)
+    def t90(trace):
+        return next(k for k, d in enumerate(trace) if d >= D(86.0)) * 0.001
+    tf = t90(_step_trace(servo(init=50.0, rate=300.0, lag=0.05, dead=0.02, slow=1.0), 0.6))
+    ts = t90(_step_trace(servo(init=50.0, rate=300.0, lag=0.05, dead=0.02, slow=2.0), 1.2))
+    assert 1.9 <= ts / tf <= 2.1, "t90 %.3f / %.3f" % (ts, tf)
+
+
+# ------------------------------------------------------------- (7) khong phu thuoc nhip goi
+SCHEDULE = [(0.0, 80.0), (0.3, 30.0), (0.6, 65.0), (0.9, 64.0), (1.0, 20.0), (1.3, 90.0)]   # (t lenh, do)
+
+
+def _run_at(rate_hz, t_end=1.8):
+    # moi chu ky: advance(t) roi lenh neu t trung lich. Lenh o boi so 0.1 s, dead 0.1 s -> thoi diem lenh va
+    # thoi diem lenh co tac dung deu nam tren ca hai luoi 30 Hz va 200 Hz (chon co y, xem bao cao).
+    m = servo(init=50.0, rate=300.0, lag=0.05, dead=0.1, quant=0.1)
+    out = {}
+    n = int(round(t_end * rate_hz))
+    for k in range(n + 1):
+        t = k / float(rate_hz)
+        d = m.advance(t)
+        for tc, deg in SCHEDULE:
+            if abs(t - tc) < 1e-9:
+                m.command(tc, D(deg))
+        if abs(t * 10.0 - round(t * 10.0)) < 1e-6:
+            out[int(round(t * 10.0))] = d
+    return out
+
+
+def test_result_independent_of_call_rate_30hz_vs_200hz():
+    a, b = _run_at(30), _run_at(200)
+    assert sorted(a) == sorted(b) and len(a) == 19
+    err = max(abs(a[i] - b[i]) for i in a)
+    assert err <= D(0.1), "sai %.3f do" % math.degrees(err)
+    assert max(a.values()) - min(a.values()) > D(30.0)      # thuc su co chuyen dong
+
+
+# ------------------------------------------------------------- (8) t lui / lap
+def test_repeated_or_backward_time_does_not_change_state():
+    ref = servo(init=50.0, rate=300.0, lag=0.05, dead=0.02)
+    m = servo(init=50.0, rate=300.0, lag=0.05, dead=0.02)
+    for x in (ref, m):
+        x.advance(0.0)
+        x.command(0.0, D(80.0))
+    v = m.advance(0.1)
+    assert ref.advance(0.1) == v
+    assert m.advance(0.1) == v           # lap
+    assert m.advance(0.05) == v          # lui: khong lui trang thai
+    assert m.advance(0.0) == v
+    assert m.advance(0.2) == pytest.approx(ref.advance(0.2), abs=TOL)   # khong lam lech tuong lai
+
+
+# ------------------------------------------------------------- (9) chua co lenh
+def test_without_command_holds_delta_init():
+    m = servo(init=37.0, lo=10.0, hi=90.0)
+    assert m.advance(5.0) == pytest.approx(D(37.0), abs=TOL)     # lan goi dau o t bat ky: delta_init
+    for t in (5.01, 5.5, 7.0, 20.0):
+        assert m.advance(t) == pytest.approx(D(37.0), abs=TOL)
+
+
+# ------------------------------------------------------------- (10) reset
+def test_reset_restores_init_and_clears_queue_and_clock():
+    m = servo(init=50.0, rate=300.0, lag=0.05, dead=0.02)
+    m.advance(0.0)
+    m.command(0.0, D(80.0))
+    m.advance(1.0)
+    m.command(1.0, D(20.0))            # con trong hang doi (chua toi 1.02)
+    m.reset()
+    assert m.advance(0.0) == pytest.approx(D(50.0), abs=TOL)    # dong ho cung reset: t=0 < 1.0 van la lan goi dau
+    for t in (0.5, 1.5, 3.0):
+        assert m.advance(t) == pytest.approx(D(50.0), abs=TOL)  # lenh cu da bi xoa
+
+
+def test_reset_allows_new_run_from_earlier_time():
+    # chay lai (dong ho bat dau lai tu 0) sau reset: lenh moi phai co tac dung, khong bi chan boi _t cu = 2.0
+    m = servo(init=50.0, rate=300.0, lag=0.05, dead=0.02)
+    m.advance(0.0)
+    m.advance(2.0)
+    m.reset()
+    m.advance(0.0)
+    m.command(0.0, D(80.0))
+    assert m.advance(0.3) > D(75.0)      # 30 do o 300 do/s mat >= 0.1 s, chet 0.02 s, tre 0.05 s: 0.3 s du toi > 75 do
+
+
+def test_reset_with_new_init():
+    m = servo(init=50.0, rate=300.0, lag=0.05, dead=0.02)
+    m.advance(0.0)
+    m.command(0.0, D(80.0))
+    m.advance(1.0)
+    m.reset(delta_init_rad=D(70.0))
+    assert m.advance(2.0) == pytest.approx(D(70.0), abs=TOL)
+    assert m.advance(3.0) == pytest.approx(D(70.0), abs=TOL)
+
+
+# ------------------------------------------------------------- from_config
+def test_from_config_converts_degrees_and_passes_slow_factor():
+    import dtrack.config as C
+    G = getattr(C, "GimbalConfig", None)
+    if G is None:
+        pytest.fail("chua co dtrack.config.GimbalConfig")
+    g = G(delta_min_deg=20.0, delta_max_deg=80.0, delta_init_deg=60.0, rate_dps=100.0, lag_s=0.1,
+          dead_time_s=0.04, quant_deg=0.5, slow_factor=1.5)
+    a = _sm().ServoModel.from_config(g)
+    b = servo(init=60.0, lo=20.0, hi=80.0, rate=100.0, lag=0.1, dead=0.04, quant=0.5, slow=1.5)
+    for x in (a, b):
+        x.advance(0.0)
+    assert a.command(0.0, D(95.0)) == pytest.approx(D(80.0), abs=TOL)
+    b.command(0.0, D(95.0))
+    for t in ticks(0.01, 1.0, 0.01):
+        assert a.advance(t) == pytest.approx(b.advance(t), abs=TOL)
+    assert a.advance(1.0) > D(61.0)       # co chuyen dong (khong phai hai mo hinh cung dung yen)
+
+
+# ------------------------------------------------------------- SimGimbalPort
+def test_port_angle_and_rate_follow_its_servo():
+    sm = _sm()
+    port = sm.SimGimbalPort(servo(init=50.0, rate=300.0, lag=0.05, dead=0.02))
+    twin = servo(init=50.0, rate=300.0, lag=0.05, dead=0.02)
+    assert port.angle(0.0) == pytest.approx(twin.advance(0.0), abs=TOL)
+    port.command(0.0, D(85.0))
+    twin.command(0.0, D(85.0))
+    for t in ticks(1.0 / 30, 0.5, 1.0 / 30):
+        assert port.angle(t) == pytest.approx(twin.advance(t), abs=TOL)
+        assert port.rate() == pytest.approx(twin.last_rate_rad_s, abs=1e-9)
+    assert port.angle(0.5) > D(80.0)
+
+
+def test_port_last_cmd_is_last_command_in_rad():
+    port = _sm().SimGimbalPort(servo(init=50.0))
+    port.angle(0.0)
+    port.command(0.0, D(45.0))
+    assert port.last_cmd == pytest.approx(D(45.0), abs=TOL)
+    port.command(0.1, D(62.0))
+    assert port.last_cmd == pytest.approx(D(62.0), abs=TOL)
+
+
+def test_port_reset_returns_to_init():
+    port = _sm().SimGimbalPort(servo(init=50.0, rate=300.0, lag=0.05, dead=0.02))
+    port.angle(0.0)
+    port.command(0.0, D(85.0))
+    assert port.angle(1.0) > D(80.0)
+    port.reset()
+    assert port.angle(0.0) == pytest.approx(D(50.0), abs=TOL)
+    assert port.angle(2.0) == pytest.approx(D(50.0), abs=TOL)

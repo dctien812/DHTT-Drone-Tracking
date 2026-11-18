@@ -1,0 +1,527 @@
+"""Test (pha do, viet truoc ma) cho BUOC 4b: ElevRefRamp + noi vao guidance.
+
+Dac ta: .office/design-gimbal-steps-3-6.md, muc "Buoc 4b" va config buoc 3
+(GuidanceConfig.elev_ramp_enabled=False, elev_ramp_dps=2.0; diem cuoi = target_elev_ref_deg).
+
+Quy uoc dau / don vi dung trong file nay (theo design "Quyet dinh chung" va guidance.py:172-182):
+  - u = LOS NED don vi tu drone toi muc tieu; z NED huong XUONG.
+  - elev_los (rad) = asin(-u_z/|u|): DUONG = muc tieu CAO hon mat phang ngang cua drone.
+  - ElevRefRamp.update(t, elev_los_rad) nhan RADIAN, tra / luu value bang DO.
+  - e_ref (do) cung quy uoc: e_ref < elev_los nghia la muon muc tieu THAP hon -> drone phai LEO.
+  - Vong dung voi cam_tilt_up_deg=0, than ngang: err_tong = e_ref - elev_los (rad),
+    vc = clip(kp_vert_center * r * tan(err_tong)), vel_ned[2] > 0 = XUONG, < 0 = LEN.
+  - Ramp di tu elev luc khoa toi final; khi da khoi dong thi KHONG theo do dac nua.
+
+Quyet dinh cua truong phong (cho cho dac ta chua ro):
+  - Ramp CHI khoi dong o lan TRACK dau tien co los_ned hop le. COAST, SEARCH, LOST hay TRACK co los_ned
+    hong thi chua khoi dong: last_elev_ref_deg van None, di duong cu.
+  - Da khoi dong thi ramp tien theo thoi gian o MOI trang thai di qua step() hoac step_blind()
+    (SEARCH/LOST/COAST deu tien tiep; last_elev_ref_deg = gia tri ramp hien tai); khong khoi dong lai.
+  - Guidance.reset() dua last_elev_ref_deg ve None.
+  - Ramp trong Guidance dung cfg.elev_ramp_dps, cfg.target_elev_ref_deg, cfg.dt_max_s.
+
+Moi import moi (dtrack.elev_ramp, truong elev_ramp_*, tham so elev_ref_deg) dat TRONG ham test de
+moi ca do rieng, khong loi thu thap.
+"""
+import math
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from dtrack.config import GuidanceConfig
+from dtrack.guidance import Guidance, compute_guidance_ex
+from dtrack.types import GuidanceCommand, OwnState, TrackState, TrackStatus
+
+Q0 = (1.0, 0.0, 0.0, 0.0)
+DT = 1.0 / 30
+R = math.radians
+
+
+def own(v=(0.0, 0.0, 0.0), alt=30.0, t=10.0):
+    return OwnState(t=t, pos_ned=(0.0, 0.0, -alt), vel_ned=v, q_world_body=Q0, armed=True, mode="GUIDED")
+
+
+def track(r=15.0, u=(1.0, 0.0, 0.0), status=TrackStatus.TRACK, rate=(0.0, 0.0, 0.0), rdot=0.0, t=10.0,
+          valid=True):
+    if status in (TrackStatus.SEARCH, TrackStatus.LOST):
+        return TrackState(t=t, status=status)
+    return TrackState(t=t, status=status, los_ned=u, los_rate_ned=rate, range_m=r, range_sigma_m=1.0,
+                      range_rate_mps=rdot, range_valid=valid)
+
+
+def prev_cmd(v=(0.0, 0.0, 0.0), dt=0.1, t=10.0, reason="track"):
+    return GuidanceCommand(t=t - dt, vel_ned=v, yaw_rad=0.0, valid=True, reason=reason)
+
+
+def u_el(deg):
+    """LOS don vi o goc nang `deg` (duong = muc tieu cao hon), huong Bac."""
+    e = R(deg)
+    return (math.cos(e), 0.0, -math.sin(e))
+
+
+def make_ramp(final=-12.0, rate=2.0, dt_max=0.2):
+    from dtrack.elev_ramp import ElevRefRamp
+    return ElevRefRamp(final, rate, dt_max)
+
+
+def gcfg(**kw):
+    base = dict(cam_tilt_up_deg=0.0, elev_ramp_enabled=True, elev_ramp_dps=2.0, target_elev_ref_deg=-12.0)
+    base.update(kw)
+    return GuidanceConfig(**base)
+
+
+# =============== (1) khoi dong tu elev do, khong nhay ===============
+def test_ramp_starts_at_measured_elevation():
+    r = make_ramp()
+    assert r.update(10.0, R(3.0)) == pytest.approx(3.0, abs=1e-9)   # tra DO, nhan RAD
+    assert r.value == pytest.approx(3.0, abs=1e-9)
+
+
+def test_guidance_first_lock_step_has_no_vertical_jump():
+    # Tinh tay: u o +3 do, tilt 0, than ngang -> err anh = -3 do; e_ref = 3 (gia tri khoi dong) -> err_tong = 0
+    # -> vc = 0. r = range_set 15 -> u_p = 0; v_own = 0 -> v_t = 0. Lenh = 0.
+    # Duong cu (khong ramp): e_ref = clip(-12, +-8) = -8 -> err_tong = -11 do -> vz != 0 (da chay: -0.00858).
+    g = Guidance(gcfg())
+    c = g.step(track(u=u_el(3.0), t=10.0), own())
+    assert g.last_elev_ref_deg == pytest.approx(3.0, abs=1e-9)
+    assert abs(c.vel_ned[2]) < 1e-9
+
+
+# =============== (2) buoc <= rate*dt, don dieu, dung dung final, hai chieu ===============
+@pytest.mark.parametrize("start,final", [(3.0, -12.0), (-20.0, -12.0)])
+def test_ramp_rate_limited_monotone_and_stops_at_final(start, final):
+    # Tinh tay: rate 2 do/s, dt = 1/30 s -> buoc 1/15 do. |final-start| = 15 do (7.5 s = 225 buoc)
+    # hoac 8 do (4 s = 120 buoc). Tai k = 15 (t = 10.5 s): start -/+ 1.0 do.
+    r = make_ramp(final=final, rate=2.0, dt_max=0.2)
+    sgn = 1.0 if final > start else -1.0
+    vals = [r.update(10.0, R(start))]
+    for k in range(1, 301):
+        meas = R(start + 5.0 * math.sin(0.3 * k))     # do dac doi lien tuc: sau khoi dong ramp KHONG theo
+        vals.append(r.update(10.0 + k * DT, meas))
+    assert vals[15] == pytest.approx(start + sgn * 1.0, abs=1e-9)
+    for a, b in zip(vals, vals[1:]):
+        assert abs(b - a) <= 2.0 * DT + 1e-9
+        assert sgn * (b - a) >= -1e-12                 # don dieu ve phia final
+        assert sgn * (final - b) >= -1e-12             # khong vuot qua final
+    n_end = int(round(abs(final - start) / (2.0 * DT)))
+    for v in vals[n_end + 1:]:
+        assert v == pytest.approx(final, abs=1e-9)
+    assert r.value == pytest.approx(final, abs=1e-9)
+
+
+# =============== (3) khong khoi dong khi chua co TRACK ===============
+def test_ramp_does_not_start_without_measurement():
+    r = make_ramp()
+    assert r.value is None
+    for k in range(10):
+        assert r.update(10.0 + 0.1 * k, None) is None
+    assert r.value is None
+    # thoi gian truoc khi khoi dong khong duoc tinh vao doc: khoi dong o dung 3.0
+    assert r.update(15.0, R(3.0)) == pytest.approx(3.0, abs=1e-9)
+
+
+def test_ramp_continues_and_does_not_restart_after_target_lost():
+    r = make_ramp()
+    r.update(10.0, R(3.0))
+    assert r.update(10.1, None) == pytest.approx(2.8, abs=1e-9)      # mat muc tieu: van tien ve final
+    assert r.update(10.2, R(10.0)) == pytest.approx(2.6, abs=1e-9)   # bat lai: KHONG khoi dong lai tu 10
+
+
+def test_guidance_ramp_not_started_uses_old_path():
+    # Ramp bat nhung chi co SEARCH: last_elev_ref_deg None, lenh y het ramp tat; TRACK dau moi khoi dong.
+    g_on, g_off = Guidance(gcfg()), Guidance(gcfg(elev_ramp_enabled=False))
+    for k in range(5):
+        tr = track(status=TrackStatus.SEARCH, t=10.0 + k * DT)
+        assert g_on.step(tr, own()) == g_off.step(tr, own())
+        assert g_on.last_elev_ref_deg is None
+    g_on.step(track(u=u_el(3.0), t=11.0), own())
+    assert g_on.last_elev_ref_deg == pytest.approx(3.0, abs=1e-9)
+
+
+# =============== (4) t lap / lui khong doi trang thai ===============
+def test_ramp_repeated_or_backward_time_keeps_state():
+    r = make_ramp()
+    r.update(10.0, R(3.0))
+    assert r.update(10.1, None) == pytest.approx(2.8, abs=1e-9)
+    assert r.update(10.1, None) == pytest.approx(2.8, abs=1e-9)      # t lap
+    assert r.update(10.0, None) == pytest.approx(2.8, abs=1e-9)      # t lui
+    assert r.update(9.0, R(3.0)) == pytest.approx(2.8, abs=1e-9)
+    # t_prev van la 10.1 (khong bi lui ve 9.0): 10.2 -> 2.8 - 2*0.1 = 2.6
+    assert r.update(10.2, None) == pytest.approx(2.6, abs=1e-9)
+
+
+# =============== (5) dt lon bi chan bang dt_max ===============
+@pytest.mark.parametrize("dt_max,expect", [(0.2, 3.0 - 2.0 * 0.2), (0.5, 3.0 - 2.0 * 0.5)])
+def test_ramp_large_dt_clamped_by_dt_max(dt_max, expect):
+    r = make_ramp(dt_max=dt_max)
+    r.update(10.0, R(3.0))
+    assert r.update(20.0, None) == pytest.approx(expect, abs=1e-9)   # 10 s nhung chi tien rate*dt_max
+
+
+# =============== (6) reset ===============
+def test_ramp_reset_clears_and_restarts_from_measurement():
+    r = make_ramp()
+    r.update(10.0, R(3.0))
+    r.update(10.1, None)
+    r.reset()
+    assert r.value is None
+    assert r.update(10.2, None) is None
+    # t_prev cung bi xoa: khoi dong lai o thoi diem som hon van dung
+    assert r.update(5.0, R(-5.0)) == pytest.approx(-5.0, abs=1e-9)
+    assert r.update(5.1, None) == pytest.approx(-5.2, abs=1e-9)
+
+
+def test_guidance_reset_resets_ramp():
+    g = Guidance(gcfg())
+    for k in range(30):
+        g.step(track(u=u_el(3.0), t=10.0 + k * DT), own())
+    assert g.last_elev_ref_deg < 2.0
+    g.reset()
+    g.step(track(u=u_el(-5.0), t=20.0), own())
+    assert g.last_elev_ref_deg == pytest.approx(-5.0, abs=1e-9)
+
+
+# =============== (7) NaN khong lam hong ===============
+def test_ramp_nan_measurement_before_start_does_not_start():
+    r = make_ramp()
+    assert r.update(10.0, float("nan")) is None
+    assert r.update(10.05, float("inf")) is None
+    assert r.update(10.1, R(3.0)) == pytest.approx(3.0, abs=1e-9)
+
+
+def test_ramp_nan_measurement_after_start_continues_ramp():
+    r = make_ramp()
+    r.update(10.0, R(3.0))
+    assert r.update(10.1, float("nan")) == pytest.approx(2.8, abs=1e-9)
+
+
+def test_ramp_nan_time_keeps_state():
+    r = make_ramp()
+    r.update(10.0, R(3.0))
+    assert r.update(float("nan"), R(3.0)) == pytest.approx(3.0, abs=1e-9)
+    assert r.update(10.1, None) == pytest.approx(2.8, abs=1e-9)
+
+
+def test_ramp_nan_time_before_start_never_yields_nan():
+    r = make_ramp()
+    out = [r.update(float("nan"), R(5.0)), r.update(10.0, R(3.0)), r.update(10.1, None)]
+    for v in out:
+        assert v is None or math.isfinite(v)
+    assert out[1] is not None and out[2] is not None
+    assert abs(out[2] - out[1]) <= 2.0 * 0.1 + 1e-9
+
+
+# =============== compute_guidance_ex(elev_ref_deg=...) ===============
+def test_compute_guidance_elev_ref_used_directly_without_clip():
+    # Tinh tay: u=(1,0,0), tilt 0 -> err anh = 0; e_ref = -12 (KHONG cat ve -8) -> err_tong = -12 do
+    # vc = 0.5*15*tan(-12 do) = -1.594174; w vuong goc u nen giu nguyen; v_t = 0, u_p = 0 (r = 15).
+    # prev = (0,0,vc), prev_accel = 0 -> a_des = 0 -> v_cmd = (0,0,vc).
+    # Neu bi cat -8: vc_cu = 7.5*tan(-8) = -1.054 -> a_des z = +5.4 -> sau gioi han vz = vc + 0.1*1.0 != vc.
+    vc = 0.5 * 15.0 * math.tan(R(-12.0))
+    cfg = GuidanceConfig(cam_tilt_up_deg=0.0)
+    cmd, _ = compute_guidance_ex(track(), own(), cfg, prev_cmd(v=(0.0, 0.0, vc), dt=0.1), (0.0, 0.0, 0.0),
+                                 elev_ref_deg=-12.0)
+    assert cmd.vel_ned[2] == pytest.approx(-1.594174, abs=1e-6)
+    assert cmd.vel_ned[0] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_compute_guidance_elev_ref_ignores_accel_compensation():
+    # Khac None: bo cat +-elev_ref_max va bo bu gia toc -> bit-bang cau hinh target=-12, max=90, comp=0.
+    kw = dict(prev=prev_cmd(v=(5.0, 0.0, -0.5), dt=0.1), prev_accel=(4.0, 0.0, 0.0))
+    tr, o = track(u=u_el(1.0)), own(v=(5.0, 0.0, 0.0))
+    got = compute_guidance_ex(tr, o, GuidanceConfig(cam_tilt_up_deg=0.0), elev_ref_deg=-12.0, **kw)
+    ref = compute_guidance_ex(tr, o, GuidanceConfig(cam_tilt_up_deg=0.0, target_elev_ref_deg=-12.0,
+                                                    elev_ref_max_deg=90.0, elev_accel_comp=0.0), **kw)
+    assert got == ref
+
+
+def test_compute_guidance_elev_ref_none_is_old_result():
+    kw = dict(prev=prev_cmd(v=(5.0, 0.0, -0.5), dt=0.1), prev_accel=(4.0, 0.0, 0.0))
+    tr, o, cfg = track(u=u_el(1.0)), own(v=(5.0, 0.0, 0.0)), GuidanceConfig(cam_tilt_up_deg=0.0)
+    assert compute_guidance_ex(tr, o, cfg, elev_ref_deg=None, **kw) == compute_guidance_ex(tr, o, cfg, **kw)
+
+
+# =============== (8) ramp tat -> lenh bit-bang ban cu ===============
+def _scenario(g):
+    """Chuoi SEARCH -> TRACK (bay, goc nang doi, co gia toc) -> LOST bay mu (step_blind) -> TRACK."""
+    out = []
+    t = 10.0
+    for _ in range(3):
+        out.append(g.step(track(status=TrackStatus.SEARCH, t=t), own(t=t)))
+        t += DT
+    for k in range(30):
+        el = 3.0 - 5.0 * k / 29.0
+        o = own(v=(4.0 + 0.05 * k, 0.3, -0.2), alt=30.0 - 0.1 * k, t=t)
+        out.append(g.step(track(r=22.0 - 0.15 * k, u=u_el(el), rate=(0.0, 0.01, 0.02), rdot=-0.5, t=t), o))
+        t += DT
+    for k in range(10):
+        out.append(g.step_blind(track(status=TrackStatus.LOST, t=t), own(v=(5.0, 0.3, -0.1), t=t)))
+        t += DT
+    for k in range(5):
+        out.append(g.step(track(r=17.0, u=u_el(-2.0), t=t), own(v=(5.0, 0.0, 0.0), t=t)))
+        t += DT
+    return [(c.t, c.vel_ned, c.yaw_rad, c.valid, c.reason) for c in out]
+
+
+# Ghi tu ma HIEN TAI (truoc buoc 4b), cung cau hinh GuidanceConfig(cam_tilt_up_deg=0.0) va
+# GuidanceConfig() mac dinh; repr float -> so sanh bang ==.
+GOLDEN_TILT0 = [
+    (10.0, (0.0, 0.0, 0.0), None, True, 'brake:no_track:search'),
+    (10.033333333333333, (0.0, 0.0, 0.0), None, True, 'brake:no_track:search'),
+    (10.066666666666666, (0.0, 0.0, 0.0), None, True, 'brake:no_track:search'),
+    (10.1, (0.01012473531990107, 0.0013376982854133065, -0.004376881095324053), 0.009999999999999787, True, 'track'),
+    (10.133333333333333, (0.030375196639637506, 0.0040055754153709355, -0.013130643196711657), 0.009999999999999787, True, 'track'),
+    (10.166666666666666, (0.06075246884532685, 0.007995348032755544, -0.026261285890932573), 0.009999999999999787, True, 'track'),
+    (10.2, (0.10125775702124795, 0.013297754881047459, -0.043768808067848414), 0.009999999999999787, True, 'track'),
+    (10.233333333333333, (0.15189242232018968, 0.019902258672616486, -0.06565320730191239), 0.009999999999999787, True, 'track'),
+    (10.266666666666666, (0.21265803370056297, 0.027796611681865008, -0.09191447877699893), 0.009999999999999787, True, 'track'),
+    (10.299999999999999, (0.28266600203264175, 0.03685412236307148, -0.11211912641277688), 0.009999999999999787, True, 'track'),
+    (10.333333333333332, (0.3587241159791571, 0.04666226796607096, -0.12303458272843693), 0.009999999999999787, True, 'track'),
+    (10.366666666666665, (0.44083393557211514, 0.05720864269760778, -0.12466086972461268), 0.009999999999999787, True, 'track'),
+    (10.399999999999999, (0.5289973117923626, 0.06847838622473548, -0.11699802436791394), 0.009999999999999787, True, 'track'),
+    (10.433333333333332, (0.6232165116597216, 0.08045309863206512, -0.10004610968450181), 0.009999999999999787, True, 'track'),
+    (10.466666666666665, (0.7234944443619549, 0.09310886002459985, -0.0738052381792059), 0.009999999999999787, True, 'track'),
+    (10.499999999999998, (0.8298351413262022, 0.10641197519803035, -0.03827563087677044), 0.009999999999999787, True, 'track'),
+    (10.533333333333331, (0.9422451195243227, 0.12030667630484491, 0.006542175471283725), 0.009999999999999787, True, 'track'),
+    (10.566666666666665, (1.0580519485489006, 0.1344449032935165, 0.05654217547128355), 0.009999999999999787, True, 'track'),
+    (10.599999999999998, (1.174183597647301, 0.1460280720726087, 0.09573370843896292), 0.009999999999999787, True, 'track'),
+    (10.633333333333331, (1.2904764270953555, 0.1563084948160172, 0.12389194345068866), 0.009999999999999787, True, 'track'),
+    (10.666666666666664, (1.4066913977657616, 0.1672098353847288, 0.1409567033897233), 0.009999999999999787, True, 'track'),
+    (10.699999999999998, (1.5226690481334497, 0.18007643073209223, 0.14708810872679065), 0.009999999999999787, True, 'track'),
+    (10.73333333333333, (1.6384269447463933, 0.19476883985606191, 0.142261644632993), 0.009999999999999787, True, 'track'),
+    (10.766666666666664, (1.7541773892198775, 0.20949009034387917, 0.1263241093592954), 0.009999999999999787, True, 'track'),
+    (10.799999999999997, (1.870189011626433, 0.22199000372818362, 0.09950290569285036), 0.009999999999999787, True, 'track'),
+    (10.83333333333333, (1.9864589366143681, 0.2322755385455389, 0.06179654711422591), 0.009999999999999787, True, 'track'),
+    (10.866666666666664, (2.102378027503444, 0.24547882915525102, 0.013374760093644474), 0.009999999999999787, True, 'track'),
+    (10.899999999999997, (2.218595571690807, 0.2561133776470081, -0.03662523990635535), 0.009999999999999787, True, 'track'),
+    (10.93333333333333, (2.3344103240739797, 0.2702048093811062, -0.08662523990635518), 0.009999999999999787, True, 'track'),
+    (10.966666666666663, (2.4508722463364703, 0.27870321894091094, -0.136625239906355), 0.009999999999999787, True, 'track'),
+    (10.999999999999996, (2.5664728237789567, 0.2946903619092107, -0.18662523990635482), 0.009999999999999787, True, 'track'),
+    (11.03333333333333, (2.683218884926754, 0.30067499267568465, -0.23662523990635465), 0.009999999999999787, True, 'track'),
+    (11.066666666666663, (2.798709090041947, 0.3176995335753447, -0.28662523990635447), 0.009999999999999787, True, 'track'),
+    (11.099999999999996, (2.91294564527427, 0.3457642353476839, -0.3366252399063543), 0.0, True, 'coast+blind'),
+    (11.13333333333333, (3.0258667741467553, 0.38486190787205987, -0.3866252399063541), 0.0, True, 'coast+blind'),
+    (11.166666666666663, (3.1373573257942198, 0.4349782118417065, -0.43662523990635393), 0.0, True, 'coast+blind'),
+    (11.199999999999996, (3.24717967883052, 0.49607968324372137, -0.48662523990635376), 0.0, True, 'coast+blind'),
+    (11.233333333333329, (3.3580714603285564, 0.5461216287567714, -0.5366252399063536), 0.0, True, 'coast+blind'),
+    (11.266666666666662, (3.4705688196193774, 0.5851690797350658, -0.5866252399063534), 0.0, True, 'coast+blind'),
+    (11.299999999999995, (3.5847847926324974, 0.6132391377169799, -0.6366252399063532), 0.0, True, 'coast+blind'),
+    (11.333333333333329, (3.700762862944434, 0.6303386987533148, -0.686625239906353), 0.0, True, 'coast+blind'),
+    (11.366666666666662, (3.818487734521903, 0.6364653169089916, -0.7366252399063529), 0.0, True, 'coast+blind'),
+    (11.399999999999995, (3.934766083820892, 0.6315753855403701, -0.7866252399063527), 0.0, True, 'coast+blind'),
+    (11.433333333333328, (4.052968065058241, 0.6157421260541613, -0.8366252399063525), 0.0, True, 'track'),
+    (11.466666666666661, (4.1729799842703015, 0.5889966984546826, -0.885573811488014), 0.0, True, 'track'),
+    (11.499999999999995, (4.294523491886036, 0.552195692375492, -0.9300506531445187), 0.0, True, 'track'),
+    (11.533333333333328, (4.417260948688225, 0.5065538032873299, -0.9679040468254373), 0.0, True, 'track'),
+    (11.566666666666661, (4.540987555059514, 0.45223709748168756, -0.9988853281548639), 0.0, True, 'track'),
+]
+GOLDEN_DEFAULT = [
+    (10.0, (0.0, 0.0, 0.0), None, True, 'brake:no_track:search'),
+    (10.033333333333333, (0.0, 0.0, 0.0), None, True, 'brake:no_track:search'),
+    (10.066666666666666, (0.0, 0.0, 0.0), None, True, 'brake:no_track:search'),
+    (10.1, (0.01012473531990107, 0.0013376982854133065, -0.004376881095324053), 0.009999999999999787, True, 'track'),
+    (10.133333333333333, (0.030375196639637506, 0.0040055754153709355, -0.013130643196711657), 0.009999999999999787, True, 'track'),
+    (10.166666666666666, (0.06075246884532685, 0.007995348032755544, -0.026261285890932573), 0.009999999999999787, True, 'track'),
+    (10.2, (0.10125775702124795, 0.013297754881047459, -0.043768808067848414), 0.009999999999999787, True, 'track'),
+    (10.233333333333333, (0.15189242232018968, 0.019902258672616486, -0.06565320730191239), 0.009999999999999787, True, 'track'),
+    (10.266666666666666, (0.21265803370056297, 0.027796611681865008, -0.09191447877699893), 0.009999999999999787, True, 'track'),
+    (10.299999999999999, (0.28266600203264175, 0.03685412236307148, -0.1121191264127769), 0.009999999999999787, True, 'track'),
+    (10.333333333333332, (0.3587241159791571, 0.04666226796607096, -0.12303458272843694), 0.009999999999999787, True, 'track'),
+    (10.366666666666665, (0.44083393557211514, 0.05720864269760778, -0.12466086972461271), 0.009999999999999787, True, 'track'),
+    (10.399999999999999, (0.5289973117923626, 0.06847838622473548, -0.11699802436791398), 0.009999999999999787, True, 'track'),
+    (10.433333333333332, (0.6232165116597216, 0.08045309863206512, -0.10004610968450187), 0.009999999999999787, True, 'track'),
+    (10.466666666666665, (0.7234944443619549, 0.09310886002459984, -0.07380523817920595), 0.009999999999999787, True, 'track'),
+    (10.499999999999998, (0.8298351413262022, 0.10641197519803033, -0.0382756308767705), 0.009999999999999787, True, 'track'),
+    (10.533333333333331, (0.9422451195243227, 0.1203066763048449, 0.006542175471283655), 0.009999999999999787, True, 'track'),
+    (10.566666666666665, (1.0580519485489006, 0.13444490329351647, 0.05654217547128348), 0.009999999999999787, True, 'track'),
+    (10.599999999999998, (1.174183597647301, 0.1460280720726087, 0.09573370843896284), 0.009999999999999787, True, 'track'),
+    (10.633333333333331, (1.2904764270953555, 0.1563084948160172, 0.12389194345068856), 0.009999999999999787, True, 'track'),
+    (10.666666666666664, (1.4066913977657616, 0.16720983538472883, 0.1409567033897232), 0.009999999999999787, True, 'track'),
+    (10.699999999999998, (1.5226690481334497, 0.18007643073209223, 0.1470881087267905), 0.009999999999999787, True, 'track'),
+    (10.73333333333333, (1.6384269447463933, 0.19476883985606191, 0.14226164463299285), 0.009999999999999787, True, 'track'),
+    (10.766666666666664, (1.7541773892198775, 0.20949009034387917, 0.1263241093592952), 0.009999999999999787, True, 'track'),
+    (10.799999999999997, (1.870189011626433, 0.2219900037281836, 0.09950290569285014), 0.009999999999999787, True, 'track'),
+    (10.83333333333333, (1.9864589366143681, 0.23227553854553892, 0.06179654711422566), 0.009999999999999787, True, 'track'),
+    (10.866666666666664, (2.102378027503444, 0.24547882915525096, 0.013374760093644161), 0.009999999999999787, True, 'track'),
+    (10.899999999999997, (2.218595571690807, 0.25611337764700814, -0.03662523990635566), 0.009999999999999787, True, 'track'),
+    (10.93333333333333, (2.3344103240739797, 0.2702048093811061, -0.08662523990635548), 0.009999999999999787, True, 'track'),
+    (10.966666666666663, (2.4508722463364703, 0.27870321894091105, -0.1366252399063553), 0.009999999999999787, True, 'track'),
+    (10.999999999999996, (2.5664728237789567, 0.29469036190921055, -0.18662523990635513), 0.009999999999999787, True, 'track'),
+    (11.03333333333333, (2.683218884926754, 0.3006749926756848, -0.23662523990635495), 0.009999999999999787, True, 'track'),
+    (11.066666666666663, (2.798709090041947, 0.3176995335753452, -0.2866252399063548), 0.009999999999999787, True, 'track'),
+    (11.099999999999996, (2.91294564527427, 0.34576423534768475, -0.3366252399063546), 0.0, True, 'coast+blind'),
+    (11.13333333333333, (3.0258667741467553, 0.38486190787206104, -0.38662523990635445), 0.0, True, 'coast+blind'),
+    (11.166666666666663, (3.1373573257942198, 0.434978211841708, -0.43662523990635427), 0.0, True, 'coast+blind'),
+    (11.199999999999996, (3.24717967883052, 0.4960796832437232, -0.4866252399063541), 0.0, True, 'coast+blind'),
+    (11.233333333333329, (3.3580714603285564, 0.5461216287567736, -0.5366252399063539), 0.0, True, 'coast+blind'),
+    (11.266666666666662, (3.470568819619378, 0.5851690797350684, -0.5866252399063537), 0.0, True, 'coast+blind'),
+    (11.299999999999995, (3.5847847926324983, 0.6132391377169828, -0.6366252399063536), 0.0, True, 'coast+blind'),
+    (11.333333333333329, (3.7007628629444347, 0.630338698753318, -0.6866252399063534), 0.0, True, 'coast+blind'),
+    (11.366666666666662, (3.818487734521904, 0.6364653169089951, -0.7366252399063532), 0.0, True, 'coast+blind'),
+    (11.399999999999995, (3.9347660838208935, 0.631575385540374, -0.786625239906353), 0.0, True, 'coast+blind'),
+    (11.433333333333328, (4.052968065058243, 0.6157421260541655, -0.8366252399063528), 0.0, True, 'track'),
+    (11.466666666666661, (4.172979984270303, 0.588996698454687, -0.8855738114880143), 0.0, True, 'track'),
+    (11.499999999999995, (4.2945234918860375, 0.5521956923754968, -0.9300506531445191), 0.0, True, 'track'),
+    (11.533333333333328, (4.417260948688226, 0.5065538032873349, -0.9679040468254376), 0.0, True, 'track'),
+    (11.566666666666661, (4.540987555059516, 0.45223709748169283, -0.9988853281548642), 0.0, True, 'track'),
+]
+
+
+@pytest.mark.parametrize("cfg_kw,golden_name", [({"cam_tilt_up_deg": 0.0}, "GOLDEN_TILT0"),
+                                                 ({}, "GOLDEN_DEFAULT")])
+def test_ramp_disabled_commands_bit_equal_old(cfg_kw, golden_name):
+    golden = globals()[golden_name]
+    got = _scenario(Guidance(GuidanceConfig(**cfg_kw)))
+    assert len(got) == len(golden)
+    # So abs=1e-12 cho so (golden nhay voi sai so libm tan/atan2), == cho valid/reason/yaw None.
+    for i, (a, b) in enumerate(zip(got, golden)):
+        assert a[0] == pytest.approx(b[0], abs=1e-12), f"buoc {i} t"
+        assert a[1] == pytest.approx(b[1], abs=1e-12), f"buoc {i} vel: {a[1]} != {b[1]}"
+        if b[2] is None:
+            assert a[2] is None, f"buoc {i} yaw"
+        else:
+            assert a[2] == pytest.approx(b[2], abs=1e-12), f"buoc {i} yaw"
+        assert (a[3], a[4]) == (b[3], b[4]), f"buoc {i}: {a[3:]} != {b[3:]}"
+
+
+def test_ramp_disabled_last_elev_ref_is_none():
+    g = Guidance(GuidanceConfig(cam_tilt_up_deg=0.0))
+    g.step(track(u=u_el(3.0)), own())
+    assert g.last_elev_ref_deg is None
+
+
+# =============== (9) ramp bat: dau van toc dung, gioi han leo ===============
+def _run_fixed(cfg, el_deg, n=300):
+    g = Guidance(cfg)
+    vz, refs = [], []
+    for k in range(n):
+        t = 10.0 + k * DT
+        vz.append(g.step(track(u=u_el(el_deg), t=t), own(t=t)).vel_ned[2])
+        refs.append(g.last_elev_ref_deg)
+    return vz, refs
+
+
+def test_guidance_ramp_climbs_when_target_above_ref():
+    # elev_los = 0 > e_ref (doc 0 -> -12 trong 6 s): drone phai LEN (vel_ned[2] < 0, NED).
+    # Tinh tay on dinh: vc = 0.5*15*tan(-12 do) = -1.594174 (< climb_max 4, < vert_center_max 2.5).
+    # Ghi chu: design ghi "(9) elev_los > e_ref thi van toc dung duong (xuong)" -- trai voi
+    # test_guidance.py:235-241 va guidance.py:179-182; test nay theo dau cua ma (LEN).
+    vz, refs = _run_fixed(gcfg(), 0.0)
+    assert refs[-1] == pytest.approx(-12.0, abs=1e-9)
+    assert all(v <= 1e-9 for v in vz)
+    assert vz[-1] == pytest.approx(-1.594174, abs=1e-4)
+
+
+def test_guidance_ramp_descends_when_target_below_ref():
+    # elev_los = -20 < e_ref (doc -20 -> -12 trong 4 s): drone XUONG.
+    # Tinh tay on dinh: err anh = +20, err_tong = 20 + (-12) = 8 do; vc = 7.5*tan(8) = 1.054063;
+    # bo thanh phan doc u (u_z = sin20): vz = vc*cos^2(20) = 0.930755.
+    vz, refs = _run_fixed(gcfg(), -20.0)
+    assert refs[-1] == pytest.approx(-12.0, abs=1e-9)
+    assert all(v >= -1e-9 for v in vz)
+    assert vz[-1] == pytest.approx(0.930755, abs=1e-4)
+
+
+def test_guidance_ramp_climb_command_within_climb_max():
+    # climb_max 1.0 < 1.594: lenh leo bi cat dung -1.0 (guidance.py:272), khong buoc nao vuot.
+    vz, refs = _run_fixed(gcfg(climb_max_mps=1.0), 0.0)
+    assert min(vz) >= -1.0 - 1e-9
+    assert vz[-1] == pytest.approx(-1.0, abs=1e-6)
+
+
+def test_guidance_step_passes_ramp_value_to_compute():
+    cfg = gcfg()
+    g = Guidance(cfg)
+    g.step(track(u=u_el(3.0), t=10.0), own())
+    prev, pa = g.prev, g.prev_accel
+    tr2 = track(u=u_el(3.0), t=10.1)
+    c2 = g.step(tr2, own(t=10.1))
+    assert g.last_elev_ref_deg == pytest.approx(2.8, abs=1e-9)        # 3 - 2*0.1
+    exp, _ = compute_guidance_ex(tr2, own(t=10.1), cfg, prev, pa, None, {}, elev_ref_deg=2.8)
+    assert c2.vel_ned == pytest.approx(exp.vel_ned, abs=1e-9)
+
+
+# =============== (10) step_blind van dung ramp ===============
+def test_step_blind_advances_and_uses_ramp():
+    cfg = gcfg()
+    g = Guidance(cfg)
+    g.step(track(u=u_el(3.0), t=10.0), own())
+    g.step(track(u=u_el(3.0), t=10.1), own(t=10.1))
+    assert g.last_elev_ref_deg == pytest.approx(2.8, abs=1e-9)
+    for t, exp_ref in ((10.2, 2.6), (10.3, 2.4)):
+        prev, pa = g.prev, g.prev_accel
+        c = g.step_blind(track(status=TrackStatus.LOST, t=t), own(t=t))
+        assert c.reason.endswith("+blind")
+        assert g.last_elev_ref_deg == pytest.approx(exp_ref, abs=1e-9)
+        # Tinh lai lenh mu: v_own = 0 -> v_t nho duoc = 0 -> v_t_hold = (0,0,0); u nho = u_el(3), r = 15.
+        synth = TrackState(t=t, status=TrackStatus.COAST, los_ned=u_el(3.0), los_rate_ned=(0.0, 0.0, 0.0),
+                           range_m=15.0, range_rate_mps=0.0, range_valid=True)
+        exp, _ = compute_guidance_ex(synth, own(t=t), cfg, prev, pa, v_t_hold=(0.0, 0.0, 0.0),
+                                     elev_ref_deg=exp_ref)
+        assert c.vel_ned == pytest.approx(exp.vel_ned, abs=1e-9)
+
+
+# =============== Guidance dung dung tham so cfg (rate, final, dt_max) ===============
+def test_guidance_ramp_uses_cfg_rate_and_final():
+    # Tinh tay: rate 4 do/s, final -10. Khoi dong 3 (t=10); t=10.1 -> 3 - 0.4 = 2.6;
+    # 13 do / 4 do/s = 3.25 s -> sau t = 13.25 dung o -10 (khong phai -12).
+    g = Guidance(gcfg(elev_ramp_dps=4.0, target_elev_ref_deg=-10.0))
+    g.step(track(u=u_el(3.0), t=10.0), own())
+    g.step(track(u=u_el(3.0), t=10.1), own(t=10.1))
+    assert g.last_elev_ref_deg == pytest.approx(2.6, abs=1e-9)
+    for k in range(1, 41):
+        t = 10.1 + 0.1 * k
+        g.step(track(u=u_el(3.0), t=t), own(t=t))
+    assert g.last_elev_ref_deg == pytest.approx(-10.0, abs=1e-9)
+
+
+@pytest.mark.parametrize("dt_max,expect", [(0.2, 3.0 - 2.0 * 0.2), (0.5, 3.0 - 2.0 * 0.5)])
+def test_guidance_ramp_time_jump_clamped_by_cfg_dt_max(dt_max, expect):
+    # t nhay 1 s giua hai lan step: buoc = rate * min(1, cfg.dt_max_s).
+    g = Guidance(gcfg(dt_max_s=dt_max))
+    g.step(track(u=u_el(3.0), t=10.0), own())
+    g.step(track(u=u_el(3.0), t=11.0), own(t=11.0))
+    assert g.last_elev_ref_deg == pytest.approx(expect, abs=1e-9)
+
+
+# =============== Guidance: trang thai khac TRACK sau khi da khoi dong ===============
+def test_guidance_ramp_advances_through_search_lost_coast_without_restart():
+    g = Guidance(gcfg())
+    g.step(track(u=u_el(3.0), t=10.0), own())
+    steps = [(track(status=TrackStatus.SEARCH, t=10.1), 2.8),
+             (track(status=TrackStatus.LOST, t=10.2), 2.6),
+             (track(status=TrackStatus.COAST, u=u_el(3.0), t=10.3), 2.4),
+             (track(u=u_el(10.0), t=10.4), 2.2)]            # TRACK lai o +10 do: KHONG khoi dong lai
+    for tr, exp in steps:
+        g.step(tr, own(t=tr.t))
+        assert g.last_elev_ref_deg == pytest.approx(exp, abs=1e-9), tr.status
+
+
+# =============== Guidance: chua khoi dong ===============
+def test_guidance_coast_before_lock_does_not_start_ramp():
+    g_on, g_off = Guidance(gcfg()), Guidance(gcfg(elev_ramp_enabled=False))
+    for k in range(3):
+        tr = track(status=TrackStatus.COAST, u=u_el(3.0), t=10.0 + k * DT)
+        assert g_on.step(tr, own(t=tr.t)) == g_off.step(tr, own(t=tr.t))
+        assert g_on.last_elev_ref_deg is None
+
+
+@pytest.mark.parametrize("bad", [None, (0.0, 0.0, 0.0), (float("nan"), 0.0, 0.0)])
+def test_guidance_track_with_bad_los_does_not_start_ramp(bad):
+    g_on, g_off = Guidance(gcfg()), Guidance(gcfg(elev_ramp_enabled=False))
+    tr = track(u=bad, t=10.0)
+    assert g_on.step(tr, own()) == g_off.step(tr, own())
+    assert g_on.last_elev_ref_deg is None
+    g_on.step(track(u=u_el(3.0), t=10.1), own(t=10.1))
+    assert g_on.last_elev_ref_deg == pytest.approx(3.0, abs=1e-9)
+
+
+def test_guidance_reset_sets_last_elev_ref_none():
+    g = Guidance(gcfg())
+    g.step(track(u=u_el(3.0), t=10.0), own())
+    assert g.last_elev_ref_deg is not None
+    g.reset()
+    assert g.last_elev_ref_deg is None
