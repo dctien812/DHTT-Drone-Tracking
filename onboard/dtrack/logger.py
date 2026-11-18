@@ -29,7 +29,13 @@ def _f(x) -> str:
     return str(x)
 
 
+GIMBAL_COLUMNS = ["t", "mode", "delta_cmd_deg", "delta_act_deg", "delta_rate_dps", "elev_los_deg",
+                  "elev_aim_deg", "elev_ref_deg", "sat", "theta_deg"]
+
+
 class CycleLogger:
+    columns = COLUMNS
+
     def __init__(self, path: str, max_queue: int = 20000):
         d = os.path.dirname(os.path.abspath(path))
         os.makedirs(d, exist_ok=True)
@@ -39,7 +45,7 @@ class CycleLogger:
         self._stop = threading.Event()
         self._f = open(path, "w", newline="", encoding="utf-8")
         self._w = csv.writer(self._f)
-        self._w.writerow(COLUMNS)
+        self._w.writerow(self.columns)
         self._th = threading.Thread(target=self._run, name="dtrack-log", daemon=True)
         self._th.start()
 
@@ -80,3 +86,18 @@ class CycleLogger:
         self._stop.set()
         self._th.join(timeout=5.0)
         self._f.close()
+
+
+class GimbalLogger(CycleLogger):
+    """gimbal.csv: mot dong moi chu ky co own (goc theo do)."""
+    columns = GIMBAL_COLUMNS
+
+    def log(self, t: float, mode: str, delta_cmd_deg: float, delta_act_deg: float, delta_rate_dps: float,
+            elev_los_deg: Optional[float], elev_aim_deg: Optional[float], elev_ref_deg: Optional[float],
+            sat: bool, theta_deg: float) -> None:
+        row = [t, mode, delta_cmd_deg, delta_act_deg, delta_rate_dps, elev_los_deg, elev_aim_deg,
+               elev_ref_deg, int(sat), theta_deg]
+        try:
+            self._q.put_nowait([_f(x) for x in row])
+        except queue.Full:
+            self.dropped += 1
