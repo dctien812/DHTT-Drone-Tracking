@@ -56,14 +56,15 @@ class SimStateReader:
 class SimTruthSource(DetectionSource):
     def __init__(self, target_url: str, chaser_url: str, camera: Optional[CameraModel] = None,
                  seed: int = 12345, blackout_file: Optional[str] = None, max_age_s: float = 0.2,
-                 synth: Optional[SyntheticConfig] = None, clock=time.monotonic, gimbal=None):
+                 synth: Optional[SyntheticConfig] = None, clock=time.monotonic, gimbal=None,
+                 target_shape=None):
         self.clock = clock
         self.gimbal = gimbal            # GimbalModel hoac None (camera co dinh)
         self.cam = camera or CameraModel()
         cfg = synth or SyntheticConfig(frame_rate_hz=30.0, latency_s=0.06, center_sigma_px=1.5, size_sigma_px=1.0,
                                        p_miss=0.20, p_false=0.05, clip_to_frame=True)
         cfg.seed = seed
-        self.det = SyntheticDetector(self.cam, cfg)
+        self.det = SyntheticDetector(self.cam, cfg, target_shape=target_shape)
         self.tgt = SimStateReader(target_url, clock=clock)
         self.chs = SimStateReader(chaser_url, clock=clock)
         self.blackout_file = blackout_file
@@ -90,7 +91,8 @@ class SimTruthSource(DetectionSource):
         n, e = latlon_to_ned(ch[1], ch[2], tg[1], tg[2])
         rel = (n + tg[4] * dtg - ch[4] * dch, e + tg[5] * dtg - ch[5] * dch,
                -(tg[3] - ch[3]) + tg[6] * dtg - ch[6] * dch)
-        return self.det.process(now, rel, self._own(ch, now, dch))
+        return self.det.process(now, rel, self._own(ch, now, dch),
+                                target_vel_ned=(tg[4], tg[5], tg[6]))    # huong mui suy tu van toc (muc tieu that = canh co dinh; than copter mo phong khong dai dien)
 
     def _own(self, ch, now: float, dch: float) -> OwnState:
         q = tuple(float(c) for c in quat_from_euler(ch[7], ch[8], ch[9]))

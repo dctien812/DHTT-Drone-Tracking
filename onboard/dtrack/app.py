@@ -21,7 +21,8 @@ from .guidance import yaw_from_quat
 from .logger import CycleLogger
 from .mavlink_io import MavlinkLink
 from .supervisor import SupervisorInput, Supervisor, SupState
-from .tracker import SingleTargetTracker
+from .range_estimator import RangeConfig
+from .tracker import SingleTargetTracker, TrackerConfig
 from .types import Detection, TrackState, TrackStatus
 
 
@@ -55,7 +56,8 @@ class App:
         self.auto_engage = auto_engage
         self.stop_file = stop_file
         self.clock = clock
-        self.tracker = SingleTargetTracker(cfg.camera.to_model())
+        self.tracker = SingleTargetTracker(cfg.camera.to_model(),
+                                           TrackerConfig(range=RangeConfig(target_size_m=cfg.target_shape.span_m)))
         self.gimbal = None
         if cfg.camera.gimbal_enabled:     # mo hinh khop gat (khop that: doc goc phan hoi servo thay cho mo hinh nay)
             from simtools.gimbal_model import GimbalModel
@@ -155,7 +157,7 @@ def build_source(args, cfg: AppConfig) -> DetectionSource:
         from simtools.sim_truth_source import SimTruthSource
         return SimTruthSource(target_url=args.sim_target, chaser_url=args.sim_chaser, camera=cfg.camera.to_model(),
                               seed=args.sim_seed, blackout_file=args.sim_blackout_file,
-                              gimbal=_make_gimbal(cfg))
+                              gimbal=_make_gimbal(cfg), target_shape=cfg.target_shape)
     if args.source == "camera":
         return CameraHailoSource()
     raise ValueError("nguon la: %s" % args.source)

@@ -151,6 +151,7 @@ PIDS=()
 
 ANARGS=(--helper-rc "$HRC")        # ma thoat helper -> bo cham (khac 0 hoac thieu events.json -> FAIL)
 [ "$DIVE" = "1" ] && ANARGS+=(--expect-dive "$DIVE_DEG")    # lan chay cam xuong: thieu events.json/moc -> FAIL
+case "$TARGET_PY" in *target_softbrake.py) ANARGS+=(--score-final) ;; esac   # ca phanh mem (soft): cham pha giam toc cuoi
 "$PY" "$HERE/analyze_closed_loop.py" "$OUT" --speed "$SPEED" --range "$RANGE" "${ANARGS[@]}" 2>&1 | tee "$OUT/result.txt"
 AN_RC="${PIPESTATUS[0]}"
 echo "analyze exit code: $AN_RC (thu muc: $OUT)"

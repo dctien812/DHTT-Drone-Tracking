@@ -253,3 +253,75 @@
 - Mức Nhỏ: BOM ở `test_guidance.py:1` và comment cũ dòng 138 (trưởng phòng tự sửa 2 dòng); 08 chưa chạy red-green cho test nhiễu (07 đã chạy).
 - Chưa kiểm chứng: hành vi trên SITL → giao 07 chạy lại ma trận nghiệm thu.
 - 13 architect (nối tiếp): thiết kế tìm lại mục tiêu. Loại "vòng lại"; "leo cao" tắt ở v1 (khớp quét ±50° đã phủ, mô phỏng không có nền); đề xuất 3 pha quét bằng khớp + xoay yaw, giới hạn tốc độ bay mù; thêm xác suất phát hiện theo kích thước vào mô phỏng (hồ sơ realdet). Người dùng đề xuất ý tìm lại; chờ trả lời 2 câu hỏi (trần độ cao, thời gian tới RTL) rồi trình kế hoạch.
+
+## 2026-11-18 · KẾ HOẠCH ĐÃ DUYỆT (người dùng: "duyệt làm hết như thế đi") · Bám mục tiêu cắm xuống + tìm lại
+- Lập: 13 architect (thiết kế K và T), 02 planner (kế hoạch), 03 challenger (kết luận NÊN SỬA: cổng P0, dừng sau K6, rút T6, siết tiêu chí; đã sửa theo).
+- Mục tiêu: trong mô phỏng, drone bám giữ được mục tiêu khi nó cắm xuống; mất dấu thì chủ động tìm lại, có pha leo cao rồi nhìn xuống quét (ý người dùng).
+- Mục tiêu mô phỏng (người dùng cung cấp): máy bay mô hình kiểu PT-40 Trainer hoặc drone, sải 2 m, bản cánh 0,32 m, thân 1,7–1,8 m. Tốc độ mục tiêu thật: 200 km/h (56 m/s), phương án động cơ khác 350–400 km/h (97–111 m/s).
+- Bậc tốc độ: bậc 1 = 10 và 20 m/s (kế hoạch này); bậc 2 = 56 m/s và bậc 3 = 97–111 m/s là mục tiêu riêng, mở đầu bằng khảo sát, trình kế hoạch sau.
+- Tiêu chí: (bám) d3 trong/sau cú cắm 12,5–40 m, ra khung ≤ 2,0 s, không dưới sàn, dive15 + dive25 × 3 seed; (đối chứng) khớp đứng yên phải THẤT BẠI; (độ nhạy) servo chậm ×2 vẫn đạt, không thì ghi "phụ thuộc thông số servo chưa đo"; (tìm lại) bắt lại trước RTL ≥ 80% lần chạy, không lần nào d3 < 12,5 m khi bay mù, không có khoảng cách hợp lệ thì không bay mù; 250 test cũ vẫn pass. Kết quả chỉ chứng minh logic trong mô phỏng.
+- Giai đoạn 1 (DỪNG BÁO người dùng ở cuối): 1 đọc mốc ma trận sau `1c7f051` (07; còn lỗi áp sát seed 3 thì 10 điều tra trước) — cổng cứng · 1b kích thước mục tiêu thật theo góc nhìn (tạo ảnh, ước lượng khoảng cách, bộ chấm), chạy lại mốc · 2 hình học khớp · 3 ServoModel/SimGimbalPort · 4 GimbalController · 5 nối app + log gimbal.csv · 6 bộ chấm đọc góc khớp thật · 7 mô phỏng: dive15/25 × 3 seed ở 10 m/s, thêm mức 20 m/s, đối chứng, độ nhạy, và góc giữ mục tiêu −15°/−20° (bay cao hơn mục tiêu) so với +4°. Mọi bước mã: 07 test fail → 05 → 08; mô phỏng 07 chạy, 08 đối chiếu.
+- Giai đoạn 2: 8 nguồn nhận diện theo xác suất thật (có mất theo cụm), đo lại mốc bám — xấu đi thì dừng báo · 9 các pha tìm lại (quét bằng khớp, leo rồi nhìn xuống, v_cap bay mù; leo tối đa đúng mức đặt cho mỗi lần tìm) · 10 so sánh không leo / leo 10 m × 3 seed, 20 m × 1 seed · 11 README/HANDOFF (12).
+- Quyết định kèm: thời gian tìm tối đa 20 s; nếu leo không hơn quét tại chỗ thì pha leo để tắt mặc định, thử lại ngoài sân; không có trần độ cao.
+- Rủi ro: A/B leo chỉ kiểm an toàn, không kiểm lợi ích (mô phỏng không có nền); thông số MG90S là giả định; `config.py` là file chung nên các bước nối tiếp. Việc khó hoàn tác: không. Không đụng `lab/`, `vision/`, `pi/`, FC thật. Hạn mức: vượt 1,5 lần số lượt ước lượng (GĐ1 ~20 lượt, ~21 lần chạy) thì dừng báo.
+
+## 2026-11-18 · Khảo sát (04 explorer ×2) phục vụ bước 1b và các bậc tốc độ
+- Kích thước mục tiêu 0,30 m ghi cứng ở hai hằng số độc lập (`dtrack/synthetic.py:26`, `dtrack/range_estimator.py:34`), bbox mô phỏng luôn vuông, không phụ thuộc hướng nhìn; literal 0.30 còn ở `analyze_closed_loop.py:189`, `feasibility_table.py:16,34`, test, docs. → thiết kế bước 1b: `TargetShapeConfig` một nguồn, bbox theo góc nhìn, hồ sơ mới `accept_plane_r25` (2,0 × 1,75 × 0,45 m; 0,45 m chiều cao là GIẢ ĐỊNH), giữ nguyên hồ sơ cũ. Đã giao 07 viết test đỏ `tests/test_target_shape.py`.
+- Giới hạn tốc độ mô phỏng (XONG CÒN NGHI NGỜ): trần lệnh bám `v_max_mps` 30 (`config.py:39`); `WP_SPD` 30, `ATC_ANGLE_MAX` 70° (`sim/chase.parm`); `range_rate_max` 60. Mục tiêu trong mô phỏng là một ArduCopter quad 0,8 kg thứ hai, không phải máy cánh cố định. Tốc độ mục tiêu cao nhất đã chạy 20,2 m/s; cả 7 lần 20 m/s đã lưu đều FAIL. Lực cản/công suất của `freestyle.json` (ngoài dự án) chưa kiểm.
+- Hệ quả cho kế hoạch: mức 20 m/s ở bước 7 nhiều khả năng FAIL, coi là số đo tham khảo chứ không phải tiêu chí đạt của giai đoạn 1 (trình người dùng).
+
+## 2026-11-18 · Kích thước mục tiêu: số đo thật từ người dùng (thay các số trước đó)
+- Máy bay trainer cánh trên: sải 2,16 m; thân dài 1,50 m; bản cánh 0,32 m; thân rộng nhất 0,18 m; cao từ đất tới đỉnh đuôi đứng ~0,60–0,70 m.
+- Hồ sơ `accept_plane_r25`: `target_shape` = (2,16; 1,50; 0,65). Đã nhắn 07 đang viết test đỏ bước 1b (SendMessage).
+- Hệ quả: nhìn ngang, khoảng cách bị ước lượng xa hơn ~44% (2,16/1,50) nếu coi cạnh lớn nhất là sải; test ghi nhận, xử lý sau khi có số đo mô phỏng.
+
+## 2026-11-18 · Quyết định của người dùng: hình học bám và kịch bản
+- Drone bám bay CAO HƠN mục tiêu, nhìn xuống 10–15°; camera đặt dưới bụng, hướng xuống. (Thay cho điểm giữ +4° hiện tại và cho mức thử −15°/−20° trong kế hoạch: bước 7 thử −10° và −15°, chọn một làm mặc định của hồ sơ máy bay.)
+- Kịch bản mục tiêu chỉ gồm: bay thẳng, hoặc chúi/lao xuống. KHÔNG xét mục tiêu bay lên. → bỏ đối chứng "mục tiêu đi lên" trong thiết kế tìm lại; khớp quét xuống trước.
+- Việc cần theo: lắp camera dưới bụng thay đổi góc lắp và hành trình khớp gật (thiết kế in 3D hiện có theo góc ngước +15°) → 13/05 xét ở bước hình học khớp; nền đất phía sau mục tiêu chưa kiểm được trong mô phỏng.
+
+- 2026-11-18 · Người dùng: giá đỡ camera để sau, làm cùng lúc vẽ vỏ kiểu bullet ráp khung Apex (chờ người dùng báo). Mô phỏng vẫn tính lại góc lắp/hành trình khớp cho camera dưới bụng. Người dùng xác nhận: nhìn từ trên xuống thì nền sau mục tiêu là mặt đất.
+
+## 2026-11-18 · Yêu cầu của người dùng: trình tự tiếp cận, dùng cả hai loại nền
+- Trình tự: cất cánh (camera gần như nhìn lên, nền trời) → bay ổn định → camera tìm và khóa mục tiêu → SAU KHI KHÓA mới tăng dần độ cao lên trên mục tiêu để đạt góc nhìn xuống 10–15°.
+- Bổ sung kế hoạch (trong mục tiêu đã duyệt, không đổi tiêu chí): thêm bước 4b "chuyển tiếp sau khi khóa": điểm giữ góc nâng đi dần từ góc lúc khóa tới −10…−15° với tốc độ giới hạn; khớp gật phải phủ được cả nhìn lên (lúc bắt) lẫn nhìn xuống (lúc bám). Kiểm: test đơn vị cho đường dốc của điểm giữ; mô phỏng ở bước 7 bắt đầu từ thế mục tiêu ở cao hơn, đo thời gian đạt góc và không mất khung trong lúc chuyển.
+- Dữ liệu huấn luyện cần cả nền trời (lúc bắt) và nền đất (lúc bám).
+
+## 2026-11-18 · Bước 1 (mốc sau `1c7f051`) · 07 test-engineer chạy 8 lần · 4 PASS / 4 FAIL
+- dive15: 3/3 PASS (trước 1/3). seed 2 ra khung 1,82 s (sát ngưỡng 2,0); seed 3 giảm tốc cuối min 18,4 m (trước 11,5).
+- dive25: 0/3 (không đổi kiểu hỏng: ra khung ~14,5 s, mất hẳn, d3 tới ~260 m trong/sau cú cắm, ~1100 m cuối chuyến). Đúng dự đoán: cần khớp gật.
+- blackout seed 1: XẤU ĐI, PASS (9,95 m) → FAIL (min d3 7,86 m < 8 m). Một seed mỗi bên, chưa kết luận nhân quả; khả năng là hệ quả của việc bỏ nhánh phanh tự khóa (đánh đổi đã biết). disengage: PASS.
+- Thư mục: `out/20261118_075744…083334`. dive25 seed 1 thêm một FAIL hạ tầng nhẹ: khoảng trống truth 0,202 s so với 0,2 s.
+- Xử lý: 07 chạy thêm blackout seed 2, 3 và đọc diễn biến (SendMessage). Bước 1b (05 sửa mã) chờ hai lần chạy này xong để không lẫn mã.
+
+## 2026-11-18 · Người dùng duyệt đề nghị về khoảng cách bám và kịch bản che hình
+- Không hạ ngưỡng an toàn; nếu số đo cho thấy lần áp sát ở blackout rơi vào đoạn mục tiêu phanh gấp cuối kịch bản thì đổi đoạn kết thành giảm tốc nhẹ (như kịch bản dive). So sánh khoảng cách bám 25 m với 15–20 m thêm vào bước 7 (sau khi khớp gật chạy được), cùng seed.
+- Thông số người dùng nêu: khớp gật camera dưới bụng có góc gập mở từ 0 tới hơn 60°. → dùng làm hành trình trong thiết kế khớp (thay ±50° giả định); cần xác định mốc 0° so với thân và kiểm khi thân chúi mũi lúc bay nhanh (camera có thể phải nhìn LÊN so với trục thân). Bước 7 phải báo hành trình khớp thực dùng theo tốc độ.
+
+## 2026-11-18 · Người dùng: tư thế bay của drone bám với vỏ kiểu bullet (ảnh tham khảo hình dạng và góc nhìn)
+- Với vỏ bullet, ở tốc độ ổn định/cao nhất thân drone gần như nằm ngang (trục thân = trục lực đẩy, hướng theo chiều bay); lúc cất cánh thân dựng đứng nên camera nhìn gần như lên trời. Góc nhìn khi bám: từ phía sau-trên xuống mục tiêu.
+- Hệ quả cho thiết kế khớp gật trong mô phỏng (bước 2–4): mốc 0° của khớp = trục thân/trục lực đẩy (mũi), khớp gập về phía bụng 0…60°+. Góc khớp cần = (góc giữa trục mũi và phương ngang) + góc nhìn xuống 10–15°. Tốc độ thấp thân còn dựng → cần góc gập lớn hơn 60°; tốc độ cao thân nằm ngang → chỉ cần ~10–15°. Mô hình quad SITL không có khí động của vỏ bullet nên quan hệ nghiêng–tốc độ khác máy thật: bước 7 phải báo góc nghiêng thân và góc khớp cần theo tốc độ.
+- Phạm vi không đổi: dự án chỉ bám và giữ khoảng cách an toàn (≥ range_min), không làm chức năng áp sát/va chạm; ảnh chỉ dùng tham khảo hình dạng khung và góc camera.
+
+- 2026-11-18 · Người dùng chốt hành trình khớp gật: 10° đến 90° so với trục thân (trục mũi); lúc cất cánh camera ở 90° so với thân (thân dựng đứng thì camera nhìn ngang), tìm thấy mục tiêu rồi mới nghiêng dần để bám. Dùng [10°, 90°] làm giới hạn khớp trong thiết kế bước 2–4 (thay 0–60° và ±50°). Góc khớp cần = góc ngẩng của trục mũi + góc nhìn xuống; bước 7 báo góc cần theo tốc độ và số lần chạm giới hạn.
+
+## 2026-11-18 · Bước 1, phần blackout · 07 test-engineer · XONG → đổi đoạn kết kịch bản
+- blackout sau sửa: seed 1 min d3 7,86 m (FAIL < 8), seed 2 8,89 m (PASS), seed 3 10,59 m (PASS). Cả ba: d3 nhỏ nhất ở pha phanh cuối, 3,5–3,8 s sau lệnh dừng; mục tiêu phanh gấp tới −5,9 m/s²; lúc đó máy bám đang TRACK, range_valid=1, KHÔNG bị che hình, đã đảo lệnh lùi. Khác biệt trước/sau sửa nhỏ (d3 ở +4 s: 10,21 so với 7,98 m), 1 mẫu trước sửa nên không kết luận nhân quả.
+- Quyết định (theo điều người dùng đã duyệt): lần áp sát rơi vào đoạn mục tiêu phanh gấp → đổi đoạn kết của blackout/disengage sang giảm tốc nhẹ 1,5 m/s² (`run_acceptance.sh`: MATRIX mặc định `1:blackout:soft 1:disengage:soft`, `TARGET_DECEL` mặc định 4 → 1,5). Ngưỡng an toàn KHÔNG đổi. Trưởng phòng tự sửa (1 file, 4 dòng), `bash -n` qua; chưa chạy thử, sẽ chạy trong lượt mô phỏng kế tiếp (07) và 08 xem diff.
+- Chưa xem: seed 3 có both_stopped=False.
+- Cổng bước 1: ĐÃ RÕ MỐC (dive15 3/3, dive25 0/3, blackout do phanh gấp). Mở bước 1b: giao 05 sửa mã theo 34 test của 07.
+
+## 2026-11-18 · Bước 1b lượt 0 + đối chiếu mốc · 08 checker · XONG CÒN NGHI NGỜ
+- (A) 05 sửa `config.py`, `synthetic.py`, `app.py`, `sim_truth_source.py`, `analyze_closed_loop.py`, README (284 passed; 08 tự chạy lại 284). 08: đạt yêu cầu; phép chiếu đúng (viết lại độc lập, khớp 0,01 px ở 7 ca); `tg[8]`/`tg[9]` đúng pitch/yaw (rad); đường mặc định không đổi theo đọc mã (chưa so bit với log cũ); một nguồn kích thước qua `app_cfg.json`.
+- 08 Quan trọng: mục tiêu mô phỏng là copter, yaw/pitch THÂN không phải hướng bay; mã đang dùng tư thế thân nên lúc rẽ/dive bbox lệch. → Quyết định trưởng phòng: hướng mũi lấy từ VẬN TỐC mục tiêu (máy bay thật mũi theo hướng bay).
+- Số kỳ vọng trong bản giao việc của trưởng phòng lệch 3–5% (tính ở độ sâu tâm); số đúng theo 8 đỉnh ở 25 m: từ sau 154,91×46,62; ngang 109,06×47,26; sau-trên 12° 155,24×65,97 px. → siết dung sai test ≤ 2%.
+- (B) Sửa của trưởng phòng ở `run_acceptance.sh`: chạy được nhưng SAI về chấm: ca soft không cắm thì pha cuối chỉ "tham khảo" (`analyze_closed_loop.py:293`), `run_closed_loop.sh:152-154` không truyền `--score-final`. → giao 05 thêm `--score-final` cho ca soft và sửa comment đầu file.
+- (C) Đối chiếu 10 lần chạy: xác nhận toàn bộ báo cáo của 07. Đáng ngờ: blackout seed 2, 3 PASS nhưng pha cuối không được chấm; ở dive25 các dòng PASS về d3 min và sàn chỉ đạt vì máy bám đã mất mục tiêu. `both_stopped=False` (blackout s3): hết hạn 90 s của helper, máy bám còn trôi ~0,6 m/s, không phải lỗi an toàn.
+- Mức Nhỏ ghi sổ: `analyze_closed_loop.py:100-105` rơi về 0,30 âm thầm nếu `app_cfg.json` không phải JSON; nhiễu 1 px trên 150 px làm sai số khoảng cách mô phỏng đẹp hơn thật.
+- Vòng sửa lượt 1: 07 cập nhật test (SendMessage) → 05 → 08.
+
+## 2026-11-18 · Bước 1b (hình dạng mục tiêu thật) · vòng sửa lượt 1 xong · 08 DUYỆT
+- 07 cập nhật test (286 pass / 4 fail đúng lý do; dung sai hình học ≤ 2%; ca đường mặc định có nhiễu 250 khung, đã chứng minh bắt lỗi trên bản sao) → 05: hướng mũi mục tiêu lấy từ vận tốc (`sim_truth_source.py:93-94`), `--score-final` cho ca soft (`run_closed_loop.sh:154`), comment `run_acceptance.sh` (290 passed) → 08 rà lại: không còn Nghiêm trọng/Quan trọng; tự chạy 290 passed.
+- Phân xử: ca mũi chúi 25° nhìn từ chính sau = 155,34×85,12 px (07 đúng; số 172,64×73,47 của 08 là ca camera ở trên, 08 xác nhận).
+- Mức Nhỏ ghi sổ: qua ngưỡng 1 m/s bbox nhảy (h 46,6 → 150,3 px), r nhảy ~+3% (0,77 m ở 25 m), không có độ trễ ở ngưỡng; `disengage:soft` không được chấm pha cuối (bộ chấm return sớm); `both_stopped` chỉ chấm ở ca cắm; `test_target_shape.py:311` còn dung sai 6%.
+- Chưa kiểm chứng: chạy SITL với hồ sơ `accept_plane_r25` và ca soft → giao 07.

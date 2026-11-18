@@ -97,12 +97,14 @@ def b4_metrics(a, truth, app, ev, scenario, res_out=None):
     from dtrack.config import make_camera
     from simtools.gimbal_model import GimbalModel
     cfgp = os.path.join(a.out, "app_cfg.json")
-    cam = {}
+    cam, shape = {}, {}
     if os.path.exists(cfgp):
         try:
-            cam = json.load(open(cfgp)).get("camera", {})
+            jc = json.load(open(cfgp))
+            cam, shape = jc.get("camera", {}), jc.get("target_shape", {})
         except ValueError:
             cam = {}
+    span = float(shape.get("span_m", 0.30))      # = TargetShapeConfig.span_m (kich thuoc ma bo uoc luong dung)
     fx = float(cam.get("fx", 1739.0)); tilt = float(cam.get("tilt_up_deg", 15.0))
     W, H = int(cam.get("width", 1456)), int(cam.get("height", 1088))
     gm = GimbalModel(cam.get("gimbal_travel_deg", 50.0), cam.get("gimbal_rate_dps", 300.0),
@@ -186,7 +188,7 @@ def b4_metrics(a, truth, app, ev, scenario, res_out=None):
     t_ws = ev.get("t_ws")
     if t_ws is not None:
         w = (T >= t_ws) & (T <= t_ws + a.window)
-        size = fx * 0.30 / D[w]
+        size = fx * span / D[w]
         res["size_px_med"] = float(np.median(size))
         lines.append("B4 kich thuoc muc tieu trong cua so (truth): trung vi %.1f px (RANGE %.0f)" % (res["size_px_med"], a.rng))
         errs = []

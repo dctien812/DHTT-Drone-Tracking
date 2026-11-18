@@ -109,6 +109,14 @@ class CameraConfig:
 
 
 @dataclass
+class TargetShapeConfig:
+    """Hop bao ba canh cua muc tieu that (mac dinh khoi 0.30 m = hanh vi cu). Bo uoc luong khoang cach dung span_m."""
+    span_m: float = 0.30      # m, ngang vuong goc mui (sai canh)
+    length_m: float = 0.30    # m, doc mui (than)
+    height_m: float = 0.30    # m, theo phuong dung
+
+
+@dataclass
 class AppConfig:
     loop_hz: float = 30.0
     brake_on_exit_s: float = 15.0   # s, toi da phanh tuong minh khi ket thuc truoc khi thoat
@@ -119,6 +127,7 @@ class AppConfig:
     supervisor: SupervisorConfig = field(default_factory=SupervisorConfig)
     mavlink: MavlinkConfig = field(default_factory=MavlinkConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
+    target_shape: TargetShapeConfig = field(default_factory=TargetShapeConfig)
 
     def __post_init__(self) -> None:
         # goc camera chi nhap mot noi (camera); guidance dung cung gia tri
@@ -153,6 +162,10 @@ def validate(cfg: AppConfig) -> None:
         v = getattr(g, name)
         if not (math.isfinite(v) and v > 0):
             raise ValueError("%s phai > 0" % name)
+    for name in ("span_m", "length_m", "height_m"):
+        v = getattr(cfg.target_shape, name)
+        if not (math.isfinite(v) and v > 0):
+            raise ValueError("target_shape.%s phai > 0" % name)
     if cfg.loop_hz <= 0 or s.loop_slow_s <= 0:
         raise ValueError("loop_hz / loop_slow_s phai > 0")
     if cfg.mavlink.resend_hz < 10.0:
@@ -185,6 +198,12 @@ PROFILES: Dict[str, Dict[str, Any]] = {
     "accept_gimbal_r25": {
         "guidance": {"range_set_m": 25.0, "range_back_m": 15.0},
         "camera": {"gimbal_enabled": True},
+    },
+    # nhu accept_gimbal_r25, muc tieu la may bay trainer canh tren (so do nguoi dung: sai 2.16, than 1.50, cao ~0.65)
+    "accept_plane_r25": {
+        "guidance": {"range_set_m": 25.0, "range_back_m": 15.0},
+        "camera": {"gimbal_enabled": True},
+        "target_shape": {"span_m": 2.16, "length_m": 1.50, "height_m": 0.65},
     },
 }
 

@@ -2,10 +2,10 @@
 # Chay lo nghiem thu vong kin voi ho so co ten (mac dinh accept_gimbal_r25: khop gat + giu 25 m), muc tieu bay thang 10 m/s.
 # Dung: run_acceptance.sh            (chay MATRIX mac dinh)
 #       MATRIX="1:none 2:none" run_acceptance.sh   (chay lai mot phan)
-# Moi muc cua MATRIX = seed:kich_ban[:che_do]; che_do = soft (muc tieu phanh mem, TARGET_DECEL m/s^2, mac dinh 4)
+# Moi muc cua MATRIX = seed:kich_ban[:che_do]; che_do = soft (muc tieu phanh mem, TARGET_DECEL m/s^2, mac dinh 1.5)
 #   hoac diveNN (NN nguyen duong; che do khac -> bao loi, thoat 2 truoc khi chay gi) (muc tieu bay thang roi cam NN do, do cao hanh trinh 70 m, ha 40 m, cuoi chuyen giam toc 1.5 m/s^2; kich_ban phai la none;
 #   cham them pha cam + pha giam toc cuoi, xem docs/scenario_dive.md). Vi du: MATRIX="1:none:dive15 1:none:dive25".
-# Mac dinh: 3 seed x dive15, 3 seed x dive25, blackout, disengage (ma tran cu: MATRIX="1:none 2:none 3:none 1:blackout 1:disengage 1:none:soft").
+# Mac dinh: 3 seed x dive15, 3 seed x dive25, blackout/soft, disengage/soft (ma tran cu: MATRIX="1:none 2:none 3:none 1:blackout 1:disengage 1:none:soft").
 # PASS = ma thoat 0 VA result.txt co "KET QUA: PASS" (thieu thu muc/result.txt -> FAIL).
 # An toan: kiem out/_STOP truoc moi lan (co -> thoat), ghi PID vao out/_matrix.pid, ghi uptime truoc moi lan,
 # sau moi lan kiem pgrep arducopter trong (khac trong -> dung). Khong xoa gi trong out/.
@@ -15,8 +15,10 @@ OUT_ROOT="${OUT_ROOT:-$HERE/out}"
 PY="${PY:-$HOME/venv-ardupilot/bin/python}"
 PROFILE="${PROFILE:-accept_gimbal_r25}"
 SPEED="${SPEED_MS:-10}"
-MATRIX="${MATRIX:-1:none:dive15 2:none:dive15 3:none:dive15 1:none:dive25 2:none:dive25 3:none:dive25 1:blackout 1:disengage}"
-TARGET_DECEL="${TARGET_DECEL:-4}"
+# 2026-11-18: blackout/disengage ket thuc bang giam toc nhe (soft, 1.5 m/s^2) thay cho phanh gap ~5.9 m/s^2:
+# muc tieu that la may bay canh co dinh, khong phanh gap duoc. Chay kieu cu: MATRIX="1:blackout 1:disengage".
+MATRIX="${MATRIX:-1:none:dive15 2:none:dive15 3:none:dive15 1:none:dive25 2:none:dive25 3:none:dive25 1:blackout:soft 1:disengage:soft}"
+TARGET_DECEL="${TARGET_DECEL:-1.5}"
 for spec in $MATRIX; do   # kiem TOAN BO ma tran TRUOC khi khoi dong gi (cung dieu kien voi run_closed_loop.sh); sai -> loi, thoat 2
   IFS=: read -r _s _k mode <<<"$spec"
   if [ -n "$mode" ] && [ "$mode" != "soft" ] && ! [[ "$mode" =~ ^dive[1-9][0-9]*$ ]]; then
