@@ -211,3 +211,50 @@ def test_dive_chaser_below_relative_floor_fails(tmp_path, capsys):
     assert rc == 1, out
     assert verdict(out, "do cao chaser >= san") == "PASS"
     assert verdict(out, "do cao chaser >= do cao dich") == "FAIL"
+
+
+def test_expect_dive_without_events_fails(tmp_path, capsys):
+    """Duoc bao la lan cam nhung khong co events.json (helper bi giet): FAIL, khong cham tieu chi chung roi PASS."""
+    d = make_run(tmp_path)
+    os.remove(os.path.join(d, "events.json"))
+    rc, out = run(d, capsys, "--expect-dive", "25")
+    assert rc == 1 and verdict(out, "co events.json") == "FAIL"
+    rc2, out2 = run(d, capsys)       # khong bao dive: van FAIL vi thieu events.json
+    assert rc2 == 1 and verdict(out2, "co events.json") == "FAIL"
+
+
+def test_expect_dive_events_without_dive_marks_fails(tmp_path, capsys):
+    d = make_run(tmp_path, dive=False)
+    rc, out = run(d, capsys, "--expect-dive", "25")
+    assert rc == 1 and verdict(out, "events.json du moc") == "FAIL" and "dive_deg" in out
+
+
+def test_helper_nonzero_rc_fails(tmp_path, capsys):
+    d = make_run(tmp_path)
+    rc, out = run(d, capsys, "--helper-rc", "0")
+    assert rc == 0 and verdict(out, "helper thoat code 0") == "PASS", out
+    rc, out = run(d, capsys, "--helper-rc", "124")
+    assert rc == 1 and verdict(out, "helper thoat code 0") == "FAIL"
+
+
+def test_speed_arg_mismatch_uses_events_value_and_warns(tmp_path, capsys):
+    """--speed 14 lech events speed 10: vneed phai tinh theo 10 (PASS) va co canh bao."""
+    rc, out = run(make_run(tmp_path), capsys, "--speed", "14")
+    assert "CANH BAO: --speed 14.0 lech events.json speed 10.0" in out
+    assert verdict(out, "toc do ha dinh") == "PASS", out
+    assert "80% cua 10*sin(25 do)" in out
+
+
+def test_target_dives_too_deep_fails(tmp_path, capsys):
+    """Muc tieu ha 40 m trong khi dive_drop_m = 25 (> 1.3 * 25 = 32.5): FAIL tieu chi moi, tieu chi ha toi thieu van PASS."""
+    rc, out = run(make_run(tmp_path, ev_set={"dive_drop_m": 25.0}), capsys)
+    assert rc == 1, out
+    assert verdict(out, "muc tieu thuc su cam xuong") == "PASS"
+    assert verdict(out, "muc tieu khong cam qua sau") == "FAIL"
+
+
+def test_relative_floor_uses_nominal_target_altitude(tmp_path, capsys):
+    """Muc tieu thuc ha 40 m nhung danh dinh 25 m: san danh dinh = 70 - 25 - 10 = 35 m; chaser ~28 m -> FAIL
+    (san cu theo diem thap nhat do duoc 30 - 10 = 20 m thi cho qua)."""
+    rc, out = run(make_run(tmp_path, ev_set={"dive_drop_m": 25.0}), capsys)
+    assert verdict(out, "do cao chaser >= do cao dich danh dinh") == "FAIL", out

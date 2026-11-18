@@ -17,11 +17,16 @@ PROFILE="${PROFILE:-accept_gimbal_r25}"
 SPEED="${SPEED_MS:-10}"
 MATRIX="${MATRIX:-1:none:dive15 2:none:dive15 3:none:dive15 1:none:dive25 2:none:dive25 3:none:dive25 1:blackout 1:disengage}"
 TARGET_DECEL="${TARGET_DECEL:-4}"
-for spec in $MATRIX; do   # kiem che do TRUOC khi khoi dong gi: chi '', soft, diveNN (NN nguyen duong); khac -> loi, thoat 2
+for spec in $MATRIX; do   # kiem TOAN BO ma tran TRUOC khi khoi dong gi (cung dieu kien voi run_closed_loop.sh); sai -> loi, thoat 2
   IFS=: read -r _s _k mode <<<"$spec"
   if [ -n "$mode" ] && [ "$mode" != "soft" ] && ! [[ "$mode" =~ ^dive[1-9][0-9]*$ ]]; then
     echo "che do khong hop le '$mode' trong '$spec' (chi: soft, diveNN voi NN nguyen duong, vd dive15): thoat, khong chay gi" >&2
     exit 2
+  fi
+  if [[ "$mode" =~ ^dive([0-9]+)$ ]]; then
+    [ "$_k" = "none" ] || { echo "'$spec': dive chi di voi kich ban none (khong chay gi)" >&2; exit 2; }
+    awk -v s="$SPEED" -v d="${BASH_REMATCH[1]}" 'BEGIN{exit !(d>0 && d<90 && s*sin(d*3.14159265/180)<=5.0)}' \
+      || { echo "'$spec': goc ${BASH_REMATCH[1]} voi $SPEED m/s cho toc do xuong > 5 m/s (WP_SPD_DN) hoac goc khong hop le (khong chay gi)" >&2; exit 2; }
   fi
 done
 mkdir -p "$OUT_ROOT"

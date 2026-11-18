@@ -224,7 +224,7 @@ def dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines):
     """Cham pha cam xuong (neu co t_dive_cmd) va pha giam toc/phanh cuoi. Xem docstring dau file."""
     t_dive, t_dive_end = dive_times(truth, ev)
     t_stop, t_end = ev.get("t_stop_target"), ev.get("t_both_stopped") or T[-1]
-    dive_run = (ev.get("dive_deg") or 0) > 0 or "t_dive_cmd" in ev      # lan chay cam xuong theo events.json
+    dive_run = (ev.get("dive_deg") or 0) > 0 or "t_dive_cmd" in ev or (a.expect_dive or 0) > 0   # cam xuong theo events.json HOAC theo nguoi goi (--expect-dive)
     if dive_run:
         missing = [k for k in ("t_go", "t_dive_cmd", "t_stop_target", "dive_deg", "dive_drop_m") if ev.get(k) is None]
         if missing:
@@ -232,6 +232,7 @@ def dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines):
             return
     if t_stop is None:
         return
+    spd = float(ev["speed"]) if ev.get("speed") is not None else a.speed     # toc do da luu trong events.json uu tien hon --speed
     rmin = a.range_min if a.range_min is not None else cfg_guidance(a.out, "range_min_m", "range_min_m")
     floor = a.alt_floor if a.alt_floor is not None else cfg_guidance(a.out, "min_alt_m", "min_alt_m") - 1.0
     if t_dive is not None:
@@ -246,13 +247,15 @@ def dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines):
             vdp = max(x[2] for x in talt)
             lines.append("cu cam: lenh luc t=%.1f, het cam t=%s ; muc tieu ha %.1f m, toc do xuong max %.2f m/s (goc ~ %.0f do voi %.0f m/s)" % (
                 t_dive, ("%.1f" % t_dive_end) if t_dive_end is not None else "?", drop, vdp,
-                math.degrees(math.asin(min(1.0, vdp / max(a.speed, 1e-6)))), a.speed))
+                math.degrees(math.asin(min(1.0, vdp / max(spd, 1e-6)))), spd))
             need = 0.8 * float(ev.get("dive_drop_m", 25.0))
             crit("muc tieu thuc su cam xuong (ha >= %.0f m)" % need, drop >= need, "ha %.1f m" % drop)
-            vneed = 0.8 * a.speed * math.sin(math.radians(float(ev["dive_deg"])))
-            crit("toc do ha dinh cua muc tieu >= %.2f m/s (80%% cua %.0f*sin(%.0f do))" % (vneed, a.speed, float(ev["dive_deg"])),
+            cap = 1.3 * float(ev["dive_drop_m"])
+            crit("muc tieu khong cam qua sau (ha <= %.0f m = 1.3 * dive_drop_m)" % cap, drop <= cap, "ha %.1f m" % drop)
+            vneed = 0.8 * spd * math.sin(math.radians(float(ev["dive_deg"])))
+            crit("toc do ha dinh cua muc tieu >= %.2f m/s (80%% cua %.0f*sin(%.0f do))" % (vneed, spd, float(ev["dive_deg"])),
                  vdp >= vneed, "dinh %.2f m/s" % vdp)
-            tgt_end_alt = min(x[1] for x in talt)
+            tgt_end_alt = talt[0][1] - float(ev["dive_drop_m"])      # do cao dich DANH DINH (do cao luc lenh cam - dive_drop_m), khong phai diem thap nhat do duoc
         else:
             tgt_end_alt = None
             crit("muc tieu thuc su cam xuong", False, "khong co dong truth giua lenh cam va stop")
@@ -280,8 +283,8 @@ def dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines):
             crit("do cao chaser >= san %.1f m (tu luc cam toi het chuyen)" % floor, amin >= floor, "min = %.2f m" % amin)
             if tgt_end_alt is not None:
                 rel = tgt_end_alt - a.alt_margin
-                crit("do cao chaser >= do cao dich sau cam - %.0f m = %.1f m" % (a.alt_margin, rel), amin >= rel,
-                     "min = %.2f m (do cao dich %.1f m)" % (amin, tgt_end_alt))
+                crit("do cao chaser >= do cao dich danh dinh sau cam - %.0f m = %.1f m" % (a.alt_margin, rel), amin >= rel,
+                     "min = %.2f m (do cao dich danh dinh %.1f m)" % (amin, tgt_end_alt))
     # pha giam toc / phanh cuoi
     name = "giam_toc_cuoi" if t_dive is not None else "phanh_cuoi"
     fin = b4res.get(name)
@@ -327,11 +330,14 @@ def main():
     ap.add_argument("--out-max", type=float, default=2.0, help="s; tong thoi gian muc tieu ra khoi khung cho phep trong pha cam / giam toc cuoi")
     ap.add_argument("--dive-after", type=float, default=5.0, help="s; pha cam keo dai them chung nay sau khi muc tieu het ha")
     ap.add_argument("--score-final", action="store_true", help="cham pha phanh cuoi cua ca KHONG cam xuong (mac dinh chi in)")
+    ap.add_argument("--expect-dive", type=float, default=None, help="do; nguoi goi bao day la lan chay cam xuong: thieu events.json/moc cam -> FAIL")
+    ap.add_argument("--helper-rc", type=int, default=None, help="ma thoat cua sim_helper; khac 0 -> FAIL (khong truyen = khong kiem)")
     a = ap.parse_args()
 
     truth = read_csv(os.path.join(a.out, "truth.csv"))
     truth, n_bad = drop_bad_rows(truth)
-    ev = json.load(open(os.path.join(a.out, "events.json"))) if os.path.exists(os.path.join(a.out, "events.json")) else {}
+    ev_exists = os.path.exists(os.path.join(a.out, "events.json"))
+    ev = json.load(open(os.path.join(a.out, "events.json"))) if ev_exists else {}
     app = read_csv(os.path.join(a.out, "app_log.csv")) if os.path.exists(os.path.join(a.out, "app_log.csv")) else []
     app_rc = int(open(os.path.join(a.out, "app.rc")).read().strip()) if os.path.exists(os.path.join(a.out, "app.rc")) else None
     scenario = ev.get("scenario", "none")
@@ -351,6 +357,15 @@ def main():
     dur = T[-1] - T[0]
     gaps = [T[i + 1] - T[i] for i in range(len(T) - 1)]
     lines.append("scenario=%s speed=%.0f  truth rows=%d  duration=%.1f s" % (scenario, a.speed, len(T), dur))
+    crit("co events.json", ev_exists, "events.json %s" % ("co" if ev_exists else "THIEU (helper bi giet giua chung?)"))
+    if a.helper_rc is not None:
+        crit("helper thoat code 0", a.helper_rc == 0, "helper rc = %s" % a.helper_rc)
+    if ev.get("speed") is not None and abs(float(ev["speed"]) - a.speed) > 1e-6:
+        lines.append("CANH BAO: --speed %.1f lech events.json speed %.1f; dung %.1f trong tieu chi cam xuong" % (
+            a.speed, float(ev["speed"]), float(ev["speed"])))
+    if a.expect_dive is not None and a.expect_dive > 0 and ev_exists and abs((ev.get("dive_deg") or 0) - a.expect_dive) > 1e-6:
+        crit("ca cam xuong: dive_deg trong events.json khop --expect-dive", False,
+             "events dive_deg=%s, mong doi %.0f" % (ev.get("dive_deg"), a.expect_dive))
     if n_bad:
         lines.append("CANH BAO: bo %d dong truth.csv thieu/hong gia tri so (khong dua vao min/max/khoang trong)" % n_bad)
     lines.append("khoang trong truth TOAN chuyen (tham khao, khong chan): max %.3f s" % max(gaps))

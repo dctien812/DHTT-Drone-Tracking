@@ -38,13 +38,15 @@ Bien: `DIVE_DEG` (> 0 bat ca cam; yeu cau `SCENARIO=none`, tu dat `STRAIGHT=1`),
 |---|---|---|
 | events.json du t_go, t_dive_cmd, t_stop_target, dive_deg, dive_drop_m; both_stopped = true | thieu/false -> FAIL | tranh PASS nham khi log thieu |
 | muc tieu thuc su ha | >= 0.8 * DIVE_DROP | phat hien SITL cat toc do |
-| toc do ha dinh cua muc tieu | >= 0.8 * speed * sin(goc) | SITL cat toc do xuong (WP_SPD_DN) |
+| muc tieu khong cam qua sau | ha <= 1.3 * DIVE_DROP | san tuong doi khong tu ha theo muc tieu |
+| toc do ha dinh cua muc tieu | >= 0.8 * speed * sin(goc); `speed` lay tu events.json (lech `--speed` thi canh bao) | SITL cat toc do xuong (WP_SPD_DN) |
 | pha cam (lenh .. stop): d3 min | >= range_min (12.5 m, config) | config.py |
 | trong va sau cam (lenh .. stop): d3 max | <= 40 m (`--dmax`) | de xuat truong phong |
 | muc tieu ra khoi khung trong pha cam (lenh .. het ha + 5 s) | <= 2.0 s (`--out-max`) | de xuat, can xem lai sau so do dau tien |
 | muc tieu ra khoi khung trong pha bay bang (het pha cam .. stop) | <= 2.0 s (`--out-max`); in them khoang lien tuc dai nhat va tong tu lenh cam toi het chuyen | nhu tren |
-| do cao chaser (lenh cam .. het chuyen) | >= min_alt_m - 1 = 9 m (`--alt-floor`) VA >= (do cao dich cua muc tieu sau cam - 10 m, `--alt-margin`) | config.py; san tuong doi moi |
+| do cao chaser (lenh cam .. het chuyen) | >= min_alt_m - 1 = 9 m (`--alt-floor`) VA >= (do cao DANH DINH cua muc tieu sau cam = do cao luc lenh cam - dive_drop_m, tru 10 m `--alt-margin`) | config.py; san tuong doi moi |
 | giam toc cuoi (stop .. dung): d3 min / d3 max / ra khoi khung | >= 12.5 m / <= 40 m / <= 2.0 s | nhu tren |
 Ca khong cam (target.py, target_softbrake.py): pha phanh cuoi chi IN cac so, khong cham, tru khi them `--score-final`.
+`run_closed_loop.sh` truyen cho bo cham `--helper-rc <ma thoat helper>` (khac 0 -> FAIL) va, voi DIVE_DEG>0, `--expect-dive <do>` (thieu events.json/moc cam hoac dive_deg lech -> FAIL). Thieu events.json -> FAIL o moi kich ban (da kiem: 16 thu muc du lieu cu van 3 PASS / 13 FAIL nhu truoc). `run_acceptance.sh` kiem toan bo ma tran truoc khi chay (dive chi voi `none`, goc 0 < NN < 90 va speed*sin(NN) <= 5 m/s), sai -> thoat 2.
 Dong truth.csv thieu/hong gia tri so bi bo (in canh bao), khong con lam sai min/max.
 In them (khong cham): d3 max doan bay deu truoc lenh cam (t_ws .. lenh cam) de doi chieu nguong 40 m. un_acceptance.sh tu choi che do khac '', soft, diveNN (NN nguyen duong): bao loi, thoat 2 truoc khi chay gi.
