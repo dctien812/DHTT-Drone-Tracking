@@ -1,0 +1,16 @@
+{
+  "guidance": {
+    "range_set_m": 25.0,
+    "range_back_m": 15.0,
+    "elev_ramp_enabled": false,
+    "target_elev_ref_deg": -12.0
+  },
+  "target_shape": {
+    "span_m": 2.16,
+    "length_m": 1.5,
+    "height_m": 0.65
+  },
+  "gimbal": {
+    "enabled": true
+  }
+}

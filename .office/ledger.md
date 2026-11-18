@@ -409,3 +409,12 @@
 - Ghi chú: mốc camera cố định (0,8–2,1 s) dùng hình học khác (camera ngước +15°, drone ngang hoặc thấp hơn mục tiêu) nên so thẳng không công bằng.
 - 2026-11-18 · NGƯỜI DÙNG QUYẾT: nới dải khớp gật thành 10° đến 110° (thay 10–90°). Góc khởi đầu lúc cất cánh giữ 90°. Việc: 07 sửa test trước (ngay, trong lúc đợt C còn chạy), 05 sửa mã SAU khi đợt C xong (`gimbal.py` `DELTA_MAX_RAD`, `GimbalConfig.delta_max_deg` mặc định 110, `validate` cho phép tới 120), 08 rà, rồi chạy lại 6 lần lõi. Số đo pha cắm của đợt C (δ chỉ 59–88° khi bám) vẫn dùng được.
 - 2026-11-18 ~21:00 · Người dùng hỏi tổng hợp: ghi đè `.office/checkpoint.md` (trạng thái, quyết định, tồn đọng). Đợt C còn chạy; test dải khớp 10–110° đã sửa (17 đỏ có chủ đích), mã chưa sửa.
+
+## 2026-11-18 · Bước 7 đợt C · 07 test-engineer · 14 lần, 2 PASS / 12 FAIL (δ_max còn 90°; mỗi cấu hình 1 seed)
+- Tóm tắt `out/_acceptance_gimbalC_20261118_135154.txt`; thư mục `out/20261118_135154…144908`; cấu hình trong `onboard/simtools/configs/` (9 file mới).
+- Đối chứng khớp đứng yên (dive25): THẤT BẠI ở pha cắm như yêu cầu (ra khung 3,24 s, liên tục 2,30 s) → khớp chủ động có tác dụng (bản chủ động: 0 s).
+- Servo chậm ×2: pha cắm vẫn 0 s ở dive25 và dive15; tốc độ khớp lớn nhất 17–18°/s (servo không phải giới hạn).
+- Góc giữ trên dive25 s1: +4° PASS toàn bộ (ra khung 0 s, δ trung vị 66°); −10° FAIL cuối 11,48 s; −12° (đợt B) 7,41 s; −15° 7,92 s. Tắt ramp: PASS toàn bộ (cuối 1,41 s).
+- Khoảng cách giữ (dive15 / dive25, s1): pha cắm ra khung 0 s ở 20 và 15 m; 12 m dive25 có 0,80 s. d3 nhỏ nhất sau t_go: 20 m → 15,5 m; 15 m → 10,25..10,99 m (sàn 6); 12 m → 10,13..10,95 m (sàn 6). Lỗi giữ cách TB 0,53..0,95 m. Tất cả FAIL ở giảm tốc cuối (6,98..14,35 s); 20 m và 12 m thêm FAIL d3 max > 40 m ở giảm tốc cuối (40,6..72,7 m); 15 m không dính.
+- 20 m/s (dive14, giữ 25 m): pha cắm ra khung 0 s, d3 cắm 24,0..30,9 m, nhưng d3 bám ổn định tới 88,6 m; θ trung vị 44°, δ trung vị 57,6°; FAIL cuối 9,60 s. Tham khảo.
+- Bất thường: lần 9 (δ 16,3°, 141°/s) và lần 14 (δ 19,4°, 80°/s) có δ rơi sâu kiểu phát hiện giả như d25 s2 đợt B.
