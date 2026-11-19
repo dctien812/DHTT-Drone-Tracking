@@ -1,0 +1,11 @@
+{
+ "tag": "EE",
+ "weights": "/mnt/d/Personal/Drone-Tracking/vision/results/b1a/train/runs/b1a_EE_s0/weights/best.pt",
+ "weights_sha256": "706ef6217944b8b9a2b8a842d45d0fc8efcda76362af660950f8e6262bd10758",
+ "cls": 0,
+ "torch": "2.15.0+cpu",
+ "threads": 8,
+ "device": "cpu",
+ "ultralytics": "8.4.215",
+ "conf": 0.01
+}

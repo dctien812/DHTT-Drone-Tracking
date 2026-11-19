@@ -406,6 +406,159 @@ def dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines):
         ("%.2f s" % fin["out_s"]) if fin else "khong do duoc")
 
 
+def cfg_search(out):
+    """(enabled, climb_m) cua muc 'search' trong app_cfg.json (JSON thua); thieu/loi -> (False, 0.0)."""
+    try:
+        s = json.load(open(os.path.join(out, "app_cfg.json"))).get("search", {})
+        return bool(s.get("enabled")), float(s.get("climb_m") or 0.0)
+    except (OSError, ValueError, AttributeError, TypeError):
+        return False, 0.0
+
+
+def _sf(r, k):
+    """float an toan cho dong csv (o rong / None / thieu cot -> NaN)."""
+    try:
+        return float(r[k])
+    except (KeyError, ValueError, TypeError):
+        return float("nan")
+
+
+def reacq_metrics(a, truth, T, D, app, search_rows, ev, crit, lines, climb_m=0.0, dist_crit=None):
+    """Bo do tim lai muc tieu (.office/design-search.md muc (g), S-2). Chi goi khi search.enabled (app_cfg.json).
+    search_rows = search.csv (None neu thieu -> FAIL 'khong do duoc'). Dot = cac hang co ep_s (ep_id giu nguyen sau khi dong).
+    Chon dot con mo tai blackout_start (chua dong truoc do) hoac dot dau tien mo sau do.
+    Moc: t_ep0 = t - ep_s (hang dau dot); bat lai CHI khi co hang dong dot closed=1 voi t <= RTL (bao theo dau chuoi t - run_s);
+    RTL = hang app rtl=1 dau tien. Dot con mo khi het log: > 20.5 s -> FAIL RTL, nguoc lai 'chua ket thuc' + FAIL khong do duoc.
+    d3 min / do cao tang tinh trong [t_ep0, bat lai | RTL | hang cuoi search.csv]. RTL doi chieu ca events.json blackout_start (+~0.3 s tre tracker).
+    dist_crit: nhu crit nhung cho tieu chi khoang cach (--measure-only -> chi in '[do]')."""
+    dist_crit = dist_crit or crit
+    if search_rows is None:
+        crit("tim lai: do duoc search.csv", False, "khong do duoc: thieu search.csv trong khi search.enabled")
+        return
+    bs = ev.get("blackout_start")
+    eps = {}
+    for r in search_rows:
+        eid, t, es = _sf(r, "ep_id"), _sf(r, "t"), _sf(r, "ep_s")
+        if math.isfinite(eid) and eid > 0 and math.isfinite(t) and math.isfinite(es):
+            eps.setdefault(int(eid), []).append(r)
+    cand = []
+    for k, v in sorted(eps.items()):
+        close = next((_sf(r, "t") for r in v if _sf(r, "closed") == 1.0 and math.isfinite(_sf(r, "run_s"))), None)
+        if bs is None or close is None or close >= bs:
+            cand.append((k, _sf(v[0], "t") - _sf(v[0], "ep_s"), v))
+    if not cand:
+        crit("tim lai: co dot tim lai trong search.csv", False, "khong do duoc: khong co dot nao con mo tu blackout_start")
+        return
+    eid, t_ep0, rows = cand[0]
+    reacq_t = close_t = None
+    for r in rows:
+        if _sf(r, "closed") == 1.0 and math.isfinite(_sf(r, "run_s")):
+            close_t, reacq_t = _sf(r, "t"), _sf(r, "t") - _sf(r, "run_s")
+            break
+    rtl_t = None
+    for r in app:
+        try:
+            if float(r["t"]) >= t_ep0 - 1e-6 and int(float(r["rtl"])) >= 1:
+                rtl_t = float(r["t"])
+                break
+        except (KeyError, ValueError, TypeError):
+            pass
+    if close_t is not None and (rtl_t is None or close_t <= rtl_t):      # bat lai chi khi dong dot (sau 1 s TRACK) khong sau RTL
+        rtl_t, end = None, reacq_t
+        what = "bat lai sau %.2f s" % (reacq_t - t_ep0)
+    elif rtl_t is not None:
+        end = rtl_t
+        what = "RTL sau %.2f s" % (rtl_t - t_ep0)
+    else:
+        end = _sf(rows[-1], "t")
+        what = "chua ket thuc"
+    seg = [i for i in range(len(T)) if t_ep0 - 1e-6 <= T[i] <= end + 1e-6]
+    d3min = min((D[i] for i in seg), default=float("nan"))
+    climb = max((fl(truth[i], "ch_alt") for i in seg), default=float("nan")) - fl(truth[seg[0]], "ch_alt") if seg else float("nan")
+    phases = [int(p) for p in (_sf(r, "phase") for r in rows) if math.isfinite(p)]
+    lines.append("TIM LAI: dot=%d bat dau t=%.2f | %s | d3 min luc mu=%.2f m | do cao tang max=%.2f m | pha max=%d" % (
+        eid, t_ep0, what, d3min, climb, max(phases, default=0)))
+    if rtl_t is not None:
+        rs = rtl_t - t_ep0
+        ok = abs(rs - 20.0) <= 0.5 and (bs is None or abs(rtl_t - bs - 20.3) <= 0.5)
+        crit("RTL o 20 +- 0.5 s", ok, "theo search.csv %.2f s%s" % (
+            rs, "" if bs is None else " ; theo blackout_start %.2f s (mong doi 20.3 +- 0.5)" % (rtl_t - bs)))
+    if what == "chua ket thuc":
+        if end - t_ep0 > 20.5:
+            crit("RTL o 20 +- 0.5 s", False, "dot mo %.2f s khi het log, khong RTL, khong bat lai" % (end - t_ep0))
+        else:
+            crit("tim lai: dot ket thuc do duoc", False, "khong do duoc: dot con mo %.2f s khi het log (chua toi 20 s)" % (end - t_ep0))
+    dist_crit("d3 luc mu >= %g m" % a.blind_d3_min, d3min >= a.blind_d3_min, "min = %.2f m" % d3min)
+    if climb_m > 0:
+        crit("do cao tang <= climb_m + 1", climb <= climb_m + 1.0 + 1e-6, "tang %.2f m (gioi han %.1f m)" % (climb, climb_m + 1.0))
+
+
+def new_blackout_scenario(ev):
+    """Kich ban mat hinh MOI (design-search.md (f)): co cam/ham dung luc mat hinh hoac mat hinh dai hon 3 s (+0.5 s du tre mau cua helper)."""
+    if ev.get("blackout_dive") or ev.get("blackout_brake") is not None:
+        return True
+    bs, be = ev.get("blackout_start"), ev.get("blackout_end")
+    s = ev.get("blackout_s")
+    if s is None and bs is not None and be is not None:
+        s = be - bs
+    return s is not None and s > 3.5
+
+
+def scenario_params_line(a, ev):
+    """Dong 'THAM SO KICH BAN: ...' (ghi tham so kich ban vao ket qua)."""
+    bs, be, t_ws = ev.get("blackout_start"), ev.get("blackout_end"), ev.get("t_ws")
+    ea = ev.get("event_at", (bs - t_ws) if bs is not None and t_ws is not None else float("nan"))
+    bsec = ev.get("blackout_s", (be - bs) if bs is not None and be is not None else float("nan"))
+    s = "THAM SO KICH BAN: event_at=%g blackout_s=%g post_s=%g blind_d3_min=%g measure_only=%d" % (
+        ea, bsec, ev.get("post_s", 15.0), a.blind_d3_min, 1 if a.measure_only else 0)
+    if ev.get("blackout_brake") is not None:
+        s += " blackout_brake=%g" % ev["blackout_brake"]
+    if ev.get("blackout_dive"):
+        s += " blackout_dive=1"
+    return s
+
+
+def brake_metrics(truth, T, ev, dist_crit, lines):
+    """Muc ham muc tieu dat duoc: (v(t0) - v(t0 + 1 s)) / dt, v = hypot(tgt_vn, tgt_ve), t0 = t_brake_cmd; tieu chi >= 80% yeu cau."""
+    req, t0 = float(ev["blackout_brake"]), ev.get("t_brake_cmd")
+    name = "ham dat >= 80% yeu cau"
+    if t0 is None or not T:
+        dist_crit(name, False, "khong do duoc: thieu t_brake_cmd hoac truth")
+        return
+
+    pts = [(T[i], math.hypot(fl(truth[i], "tgt_vn"), fl(truth[i], "tgt_ve"))) for i in range(len(T))
+           if t0 - 1e-6 <= T[i] <= t0 + 4.0]
+    pts = [p for p in pts if math.isfinite(p[1])]
+
+    def v_at(t):                      # noi suy tuyen tinh (chiu duoc khoang trong mau)
+        for (ta_, va), (tb_, vb) in zip(pts, pts[1:]):
+            if ta_ <= t <= tb_:
+                return va if tb_ <= ta_ else va + (vb - va) * (t - ta_) / (tb_ - ta_)
+        return None
+    # "ham dat duoc" = max do giam toc do ngang TB tren cua so truot 1 s, cua so bat dau trong [t0, t0 + 2.5 s] (tre lenh -> FC);
+    # muc tieu dung han truoc khi du 1 s thi cua so ngan hon (>= 0.5 s)
+    best, short = None, False
+    for ts, vs in pts:
+        if ts > t0 + 2.5 + 1e-6 or vs <= 0.05:
+            continue
+        te, sh = ts + 1.0, False
+        stop = next((t for t, v in pts if t > ts and v <= 0.05), None)
+        if stop is not None and stop < te:
+            te, sh = max(stop, ts + 0.5), True
+        ve = v_at(te)
+        if ve is None:
+            continue
+        d = (vs - ve) / (te - ts)
+        if best is None or d > best:
+            best, short = d, sh
+    if best is None:
+        dist_crit(name, False, "khong do duoc: truth khong phu cua so 1 s sau t_brake_cmd")
+        return
+    ach = best
+    lines.append("ham dat duoc = %.2f m/s2 (yeu cau %.2f)%s" % (ach, req, " [cua so ngan hon 1 s: muc tieu da dung]" if short else ""))
+    dist_crit(name, ach >= 0.8 * req, "%.2f m/s2 (nguong %.2f)" % (ach, 0.8 * req))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("out")
@@ -421,6 +574,8 @@ def main():
     ap.add_argument("--dive-after", type=float, default=5.0, help="s; pha cam keo dai them chung nay sau khi muc tieu het ha")
     ap.add_argument("--score-final", action="store_true", help="cham pha phanh cuoi cua ca KHONG cam xuong (mac dinh chi in)")
     ap.add_argument("--expect-dive", type=float, default=None, help="do; nguoi goi bao day la lan chay cam xuong: thieu events.json/moc cam -> FAIL")
+    ap.add_argument("--blind-d3-min", type=float, default=8.0, help="m; d3 nho nhat cho phep luc mu (chi khi search.enabled; ca muc tieu ham dung 6)")
+    ap.add_argument("--measure-only", action="store_true", help="tieu chi khoang cach (d3 luc mu, khong bao gio <, ham dat) chi in '[do]', khong doi ma thoat; tieu chi ha tang van cham")
     ap.add_argument("--helper-rc", type=int, default=None, help="ma thoat cua sim_helper; khac 0 -> FAIL (khong truyen = khong kiem)")
     a = ap.parse_args()
 
@@ -439,9 +594,18 @@ def main():
         ok_all &= bool(ok)
         lines.append("[%s] %s: %s" % ("PASS" if ok else "FAIL", name, detail))
 
+    def dist_crit(name, ok, detail):       # tieu chi khoang cach: --measure-only chi in, khong chan
+        if a.measure_only:
+            lines.append("[do] %s: %s" % (name, detail))
+        else:
+            crit(name, ok, detail)
+
     if len(truth) < 10:
         print("KET QUA: FAIL (truth.csv gan nhu rong)")
         return 1
+    search_on, climb_m = cfg_search(a.out)
+    if scenario == "blackout" and "blackout_start" in ev and (search_on or new_blackout_scenario(ev)):
+        lines.append(scenario_params_line(a, ev))
     T = [fl(r, "t") for r in truth]
     D = [fl(r, "d3") for r in truth]
     dur = T[-1] - T[0]
@@ -484,7 +648,7 @@ def main():
     hard_floor = cfg_acceptance(a.out, "hard_floor_m")
     if hard_floor is None:
         hard_floor = 8.0
-    crit("khong bao gio < %g m (toan chuyen bay)" % hard_floor, D[imin] >= hard_floor,"min = %.2f m" % D[imin])
+    dist_crit("khong bao gio < %g m (toan chuyen bay)" % hard_floor, D[imin] >= hard_floor,"min = %.2f m" % D[imin])
     crit("app thoat code 0", app_rc == 0, "app.rc = %s" % app_rc)
     abort_n = sum(1 for r in app if r.get("state") == "abort")
     lines.append("so chu ky app o ABORT = %d" % abort_n)
@@ -582,12 +746,26 @@ def main():
         lines.append("trang thai supervisor trong doan do: %s" % dict(Counter(r["state"] for r in aseg)))
         rtl = sum(int(r["rtl"]) for r in app)
         lines.append("so lan yeu cau RTL = %d" % rtl)
+        if search_on:        # tim lai bat: do bat lai / RTL / d3 luc mu / do cao tang (search.csv); tat thi dau ra khong doi
+            sp = os.path.join(a.out, "search.csv")
+            reacq_metrics(a, truth, T, D, app, read_csv(sp) if os.path.exists(sp) else None, ev, crit, lines, climb_m, dist_crit)
+        elif new_blackout_scenario(ev):
+            lines.append("CANH BAO: kich ban mat hinh dai nhung search tat: khong cham tim lai")
+            pst = ev.get("post_s", 15.0)
+            seg2 = [D[i] for i in range(len(T)) if bs <= T[i] <= be + pst]
+            if seg2:
+                lines.append("d3 min luc mu = %.2f m (search tat; [blackout_start, blackout_end + post_s])" % min(seg2))
+        if ev.get("blackout_brake") is not None:
+            brake_metrics(truth, T, ev, dist_crit, lines)
     b4res = {}
     try:
         lines.extend(b4_metrics(a, truth, app, ev, scenario, b4res))
     except Exception as exc:     # do dac B4 khong duoc lam hong ket qua chinh
         lines.append("B4 loi: %r" % (exc,))
-    dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines)
+    if ev.get("blackout_dive") or ev.get("blackout_brake") is not None:     # ca tim lai (design-search.md (f)): khong cham cam/giam toc cuoi kieu cu
+        lines.append("ca mat hinh + cam/ham: bo cham cam xuong va giam toc cuoi kieu cu")
+    else:
+        dive_and_final_scoring(a, truth, T, D, ev, b4res, crit, lines)
     print("\n".join(lines))
     print("KET QUA: %s" % ("PASS" if ok_all else "FAIL"))
     return 0 if ok_all else 1

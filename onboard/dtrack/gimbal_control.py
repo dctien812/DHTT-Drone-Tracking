@@ -23,7 +23,7 @@ class GimbalCommand:
     t: float
     delta_cmd_rad: float
     sat: bool
-    mode: str   # "init" | "track" | "coast" | "hold" | "hold_last" | "frozen"
+    mode: str   # "init" | "track" | "coast" | "hold" | "hold_last" | "frozen" | "scan"
     elev_los_rad: Optional[float]
     elev_aim_rad: Optional[float]
 
@@ -43,16 +43,22 @@ class GimbalController:
         self._last_delta: Optional[float] = None
         self._last_sat = False
 
-    def step(self, t: float, q_body, track: TrackState) -> GimbalCommand:
+    def step(self, t: float, q_body, track: TrackState, scan_delta_rad: Optional[float] = None) -> GimbalCommand:
         if self.cfg.frozen:
             return self._emit(t, self._init, False, "frozen", None, None)
         try:
-            return self._step(t, q_body, track)
+            return self._step(t, q_body, track, scan_delta_rad)
         except ValueError:
             d = self._init if self._last_delta is None else self._last_delta
             return GimbalCommand(t, d, self._last_sat, "hold_last", None, None)
 
-    def _step(self, t, q_body, track: TrackState) -> GimbalCommand:
+    def _step(self, t, q_body, track: TrackState, scan_delta_rad: Optional[float] = None) -> GimbalCommand:
+        if scan_delta_rad is not None:      # quet tim lai muc tieu: goc khop truc tiep, khong on dinh theo tu the
+            x = float(scan_delta_rad)
+            if not math.isfinite(x):
+                raise ValueError("scan_delta_rad khong huu han")
+            d = max(self._min, min(self._max, x))
+            return self._emit(t, d, d != x, "scan", None, None)
         if track.status in (TrackStatus.TRACK, TrackStatus.COAST):
             u = track.los_ned
             if u is not None:

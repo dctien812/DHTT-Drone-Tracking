@@ -17,7 +17,7 @@ Gói thêm (đã cài vào venv): `flask`, `pytest` (xem `requirements.txt`).
 ## Mở ra mạng nội bộ (laptop khác mở trang) - BẮT BUỘC mật khẩu
 ```
 echo 'mat-khau-dai-it-nhat-12-ky-tu' > ~/labview.pw && chmod 600 ~/labview.pw     # đặt NGOÀI thư mục git
-python -m labview --source file:... --allow-network --host 192.168.1.50 --password-file ~/labview.pw
+python -m labview --source file:... --allow-network --host 192.0.2.50 --password-file ~/labview.pw
 # hoặc: export LABVIEW_PASSWORD=...  rồi --allow-network --host <địa chỉ mạng nội bộ>
 ```
 Không mật khẩu (hoặc < 12 ký tự) thì chương trình từ chối khởi động (mã thoát 2). `--password-file` bị từ chối

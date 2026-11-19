@@ -1,0 +1,156 @@
+<title>Sơ đồ Drone Tracking</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+/* Bố cục: một cột đọc từ trên xuống; mỗi phần là một sơ đồ dòng chảy (khối nối bằng mũi tên), phần cuối là bảng tiến độ. */
+:root{
+  --bg:#f2f5f7; --surface:#ffffff; --ink:#15222b; --muted:#566772; --line:#cfd9df;
+  --accent:#0b6a8a; --accent-soft:#dcedf3;
+  --done:#256f47; --done-soft:#dff0e6; --doing:#99590a; --doing-soft:#fbecd3; --todo:#5d6b74; --todo-soft:#e6ebee;
+  --warn:#a23a2a; --warn-soft:#f8e2dd;
+  --font:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0f171c; --surface:#18232a; --ink:#e6edf1; --muted:#9db0bb; --line:#2c3b44;
+  --accent:#5fc0e0; --accent-soft:#143442;
+  --done:#7fd3a2; --done-soft:#17362a; --doing:#f0b866; --doing-soft:#3b2b10; --todo:#a9b7c0; --todo-soft:#243139;
+  --warn:#f09a8a; --warn-soft:#3d1d17; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#0f171c; --surface:#18232a; --ink:#e6edf1; --muted:#9db0bb; --line:#2c3b44;
+  --accent:#5fc0e0; --accent-soft:#143442;
+  --done:#7fd3a2; --done-soft:#17362a; --doing:#f0b866; --doing-soft:#3b2b10; --todo:#a9b7c0; --todo-soft:#243139;
+  --warn:#f09a8a; --warn-soft:#3d1d17; color-scheme:dark }
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.55;
+  padding-block:28px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:40px}
+h1{font-size:28px;line-height:1.2;margin:0;font-weight:700;text-wrap:balance}
+h2{font-size:20px;line-height:1.3;margin:0;font-weight:600;text-wrap:balance}
+p{margin:0;max-width:68ch}
+.lede{color:var(--muted)}
+.stamp{font-size:13px;color:var(--muted)}
+section{display:flex;flex-direction:column;gap:14px}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+
+/* dòng chảy */
+.flow{display:flex;flex-wrap:wrap;gap:26px 30px;list-style:none;margin:0;padding:0}
+.flow>li{position:relative;flex:1 1 200px;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.flow>li:not(:last-child)::after{content:"→";position:absolute;right:-24px;top:50%;transform:translateY(-50%);color:var(--accent);font-size:18px;font-weight:700}
+.flow .name{font-weight:600}
+.flow .what{color:var(--muted);font-size:13.5px}
+.flow .now{font-size:13px;border-top:1px dashed var(--line);padding-top:6px}
+.side{background:var(--accent-soft);border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 6px 6px 0;max-width:none}
+@media (max-width:640px){
+  .flow{flex-direction:column;gap:26px}
+  .flow>li{flex:none}
+  .flow>li:not(:last-child)::after{content:"↓";right:auto;left:50%;top:auto;bottom:-25px;transform:translateX(-50%)}
+}
+
+/* trạng thái */
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.done{background:var(--done-soft);color:var(--done)}
+.doing{background:var(--doing-soft);color:var(--doing)}
+.todo{background:var(--todo-soft);color:var(--todo)}
+.warn{background:var(--warn-soft);color:var(--warn)}
+
+/* máy trạng thái */
+.states .t{font-size:12.5px;color:var(--accent);font-weight:600}
+.back{font-size:13.5px;color:var(--muted)}
+
+/* bảng */
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:620px;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13.5px}
+th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <span class="eyebrow">Drone Tracking</span>
+    <h1>Drone hoạt động thế nào, và hôm nay đang sửa chỗ nào</h1>
+    <p class="lede">Bốn sơ đồ: một vòng xử lý của drone, điều gì xảy ra khi mất mục tiêu, vì sao mỗi thay đổi phải qua nhiều bước, và tiến độ 21 bước của giai đoạn 2.</p>
+    <p class="stamp">Trạng thái tính đến tối 2026-11-19. Mọi thứ ở đây mới chạy trong mô phỏng, chưa bay thật.</p>
+    <div class="legend"><span><span class="pill done">xong</span> đã làm và đã rà</span><span><span class="pill doing">đang làm</span> có vai đang xử lý</span><span><span class="pill todo">chưa</span> chưa bắt đầu</span><span><span class="pill warn">lỗi đã biết</span></span></div>
+  </header>
+
+  <section>
+    <span class="eyebrow">Sơ đồ 1</span>
+    <h2>Một vòng xử lý, lặp khoảng 30 lần mỗi giây</h2>
+    <p>Mỗi khung hình đi qua sáu khối theo thứ tự. Khối sau chỉ biết điều khối trước nói, nên một lỗi ở đầu chuỗi sẽ lan xuống cuối.</p>
+    <ol class="flow">
+      <li><span class="name">1. Camera</span><span class="what">Camera góc rộng gắn dưới bụng, trên một khớp gật ngẩng hoặc cúi 10°–110°.</span><span class="now"><span class="pill done">xong</span> giai đoạn 1</span></li>
+      <li><span class="name">2. Nhận diện</span><span class="what">Tìm mục tiêu trong ảnh, trả về một khung chữ nhật bao quanh nó.</span><span class="now"><span class="pill todo">chưa</span> huấn luyện chờ ảnh máy bay (MMFW-UAV)</span></li>
+      <li><span class="name">3. Bộ bám</span><span class="what">Nối các khung chữ nhật qua thời gian thành một mục tiêu duy nhất, đoán vị trí khi thiếu vài khung.</span><span class="now"><span class="pill doing">đang làm</span> chặn chấm giả và lỗi ở mép khung</span></li>
+      <li><span class="name">4. Ước lượng khoảng cách</span><span class="what">Từ kích thước mục tiêu trong ảnh suy ra nó cách bao xa.</span><span class="now"><span class="pill done">xong</span> giai đoạn 1</span></li>
+      <li><span class="name">5. Dẫn đường</span><span class="what">Tính vận tốc cần bay: giữ cách 15 m, bay cao hơn mục tiêu và nhìn xuống 12°, lùi khi gần hơn 10 m.</span><span class="now"><span class="pill doing">đang làm</span> sửa lỗi tự leo cao khi mất hình</span></li>
+      <li><span class="name">6. Giám sát an toàn</span><span class="what">Quyết định có cho lệnh đi tiếp không: mất mục tiêu quá lâu thì bay về, người lái giành quyền thì dừng.</span><span class="now"><span class="pill doing">đang làm</span> thêm khối tìm lại mục tiêu</span></li>
+      <li><span class="name">7. Bộ điều khiển bay</span><span class="what">Nhận lệnh vận tốc và điều khiển động cơ (ArduCopter).</span><span class="now"><span class="pill todo">chưa</span> mới chạy bản mô phỏng</span></li>
+    </ol>
+    <p class="side"><strong>Nhánh song song: khớp gật camera.</strong> Lấy hướng mục tiêu từ khối 3 để xoay camera, giữ mục tiêu trong khung hình khi drone nghiêng. Khi mất mục tiêu, nhánh này sẽ chuyển sang quét.</p>
+  </section>
+
+  <section class="states">
+    <span class="eyebrow">Sơ đồ 2</span>
+    <h2>Khi mất mục tiêu: drone làm gì trong 20 giây</h2>
+    <p>Đây là phần đang xây ở giai đoạn 2. Hiện tại drone chỉ bay mù 4 giây, đứng yên, rồi bay về ở giây thứ 10.</p>
+    <ol class="flow">
+      <li><span class="name">Đang bám</span><span class="what">Thấy mục tiêu, giữ 15 m.</span><span class="t">bình thường</span></li>
+      <li><span class="name">Bay mù</span><span class="what">Bay tiếp theo hướng cũ, có giới hạn tốc độ. Không được leo cao, không được tới gần hơn 8 m.</span><span class="t">giây 0 đến 4</span></li>
+      <li><span class="name">Treo và quét</span><span class="what">Dừng lại, camera quét lên xuống, thân xoay trái phải để tìm.</span><span class="t">giây 4 đến 20</span></li>
+      <li><span class="name">Leo rồi nhìn xuống</span><span class="what">Leo thêm một mức đặt trước rồi quét từ trên. Ý của anh; mặc định tắt vì mô phỏng không đo được lợi ích.</span><span class="t">tùy chọn, từ giây 10</span></li>
+      <li><span class="name">Bay về</span><span class="what">Hết 20 giây mà chưa bắt lại.</span><span class="t">giây 20</span></li>
+    </ol>
+    <p class="back"><strong>Đường quay lại:</strong> ở bất kỳ ô nào, nếu thấy lại mục tiêu liên tục đủ 1 giây thì trở về "Đang bám". Một chấm thoáng qua không tính, và không làm đồng hồ 20 giây chạy lại từ đầu.</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">Sơ đồ 3</span>
+    <h2>Vì sao một thay đổi phải qua nhiều bước</h2>
+    <p>Mỗi chỗ sửa trong mã đi qua bốn trạm, mỗi trạm một vai khác nhau, để người làm không tự chấm bài mình. 21 bước của kế hoạch là ba chỗ sửa nhân với bốn trạm này, cộng thiết kế, điều tra và tài liệu.</p>
+    <ol class="flow">
+      <li><span class="name">Viết bài kiểm trước</span><span class="what">Vai 07 viết test mô tả hành vi đúng. Test phải trượt trên mã cũ, để chắc nó bắt được lỗi.</span></li>
+      <li><span class="name">Sửa mã</span><span class="what">Vai 05 sửa cho tới khi test đạt, không được sửa test.</span></li>
+      <li><span class="name">Rà độc lập</span><span class="what">Vai 08 đọc lại mã và thử phá nó. Có vấn đề thì quay về trạm 1 hoặc 2.</span></li>
+      <li><span class="name">Chạy mô phỏng</span><span class="what">Vai 07 cho drone ảo bay thật nhiều lần; vai 08 tự tính lại số từ log.</span></li>
+    </ol>
+    <p class="side">Ví dụ hôm nay: bản sửa lỗi leo cao qua được trạm 2 nhưng bị trạm 3 trả về, vì nó chặn luôn cả lệnh leo tránh đất. Nếu không có trạm 3, lỗi đó sẽ lên tới mô phỏng hoặc xa hơn.</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">Sơ đồ 4</span>
+    <h2>Tiến độ giai đoạn 2, gom theo khối bị sửa</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Bước</th><th>Việc</th><th>Sửa khối nào</th><th>Vai</th><th>Trạng thái</th></tr></thead>
+        <tbody>
+          <tr><td class="n">3, 6, 11</td><td>Không tự leo cao khi mất hình</td><td>5. Dẫn đường</td><td>07 → 05 → 08</td><td><span class="pill doing">đang làm</span> sửa lượt 2 sau khi bị rà trả về</td></tr>
+          <tr><td class="n">2, 8, 10, 12</td><td>Chặn chấm giả lúc mất hình; mục tiêu bị cắt ở mép khung</td><td>3. Bộ bám</td><td>10 → 07 → 05 → 08</td><td><span class="pill doing">đang làm</span> mã xong, đang rà</td></tr>
+          <tr><td class="n">4, 7, 11</td><td>Mô phỏng biết "mất hình theo cụm" như camera thật</td><td>Công cụ mô phỏng</td><td>07 → 05 → 08</td><td><span class="pill done">xong</span></td></tr>
+          <tr><td class="n">1, 11</td><td>Thiết kế khối tìm lại</td><td>6. Giám sát, 5. Dẫn đường, khớp gật</td><td>02 → 08</td><td><span class="pill done">xong</span> đã sửa theo phản biện</td></tr>
+          <tr><td class="n">13</td><td>Bài kiểm cho khối tìm lại</td><td>6, 5, khớp gật</td><td>07</td><td><span class="pill doing">đang làm</span></td></tr>
+          <tr><td class="n">14, 15</td><td>Mô phỏng hồi quy khoảng 11 lần. Cổng dừng: bám xấu đi thì báo anh</td><td>Cả chuỗi</td><td>07 chạy, 08 đối chiếu</td><td><span class="pill todo">chưa</span></td></tr>
+          <tr><td class="n">16, 17</td><td>Viết khối tìm lại và bộ đo</td><td>6, 5, khớp gật</td><td>05 → 08</td><td><span class="pill todo">chưa</span></td></tr>
+          <tr><td class="n">18, 19</td><td>Mô phỏng tìm lại khoảng 17 lần, kèm hình tĩnh</td><td>Cả chuỗi</td><td>07 chạy, 08 đối chiếu</td><td><span class="pill todo">chưa</span></td></tr>
+          <tr><td class="n">20, 21</td><td>Cập nhật tài liệu, rà cuối theo 10 tiêu chí</td><td>Tài liệu</td><td>05 → 08</td><td><span class="pill todo">chưa</span></td></tr>
+          <tr><td class="n">5, 9</td><td>Bỏ tên đăng nhập và IP khỏi repo</td><td>Script cho Pi</td><td>05 → 09</td><td><span class="pill done">xong</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Bức tranh lớn</span>
+    <h2>Sáu cổng duyệt từ bàn làm việc tới lần bay đầu</h2>
+    <p>Giai đoạn 2 nằm trong cổng B4. Anh duyệt từng cổng trước khi sang cổng sau.</p>
+    <ol class="flow">
+      <li><span class="name">B1. Nhận diện trên video</span><span class="now"><span class="pill todo">chưa</span> làm lại, chờ dữ liệu máy bay</span></li>
+      <li><span class="name">B2. Máy tính và camera trên bàn</span><span class="now"><span class="pill doing">đang làm</span> Pi chờ nguồn mới</span></li>
+      <li><span class="name">B3. Nối bộ điều khiển bay, chỉ đọc</span><span class="now"><span class="pill todo">chưa</span></span></li>
+      <li><span class="name">B4. Mô phỏng và an toàn</span><span class="now"><span class="pill done">xong</span> giai đoạn 1 · <span class="pill doing">đang làm</span> giai đoạn 2</span></li>
+      <li><span class="name">B5. Thử tích hợp trên mặt đất</span><span class="now"><span class="pill todo">chưa</span></span></li>
+      <li><span class="name">B6. Bay quan sát có kiểm soát</span><span class="now"><span class="pill todo">chưa</span> chỉ sau B1–B5</span></li>
+    </ol>
+  </section>
+</div>

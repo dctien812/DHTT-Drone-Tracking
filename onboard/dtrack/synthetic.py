@@ -33,6 +33,11 @@ class SyntheticConfig:
     false_size_range_px: Tuple[float, float] = (8.0, 40.0)  # px, kich thuoc bbox gia
     clip_to_frame: bool = True        # cat bbox theo khung anh (nhu detector that khi muc tieu cham mep)
     seed: int = 12345                 # seed co dinh de tai lap
+    # --- 'realdet' (GIA DINH, mac dinh TAT): xac suat phat hien theo co bbox + mat THEO CUM; khi bat thi thay p_miss ---
+    realdet_enabled: bool = False
+    p_detect_px: Tuple[Tuple[float, float], ...] = ()  # ((bbox w px, p phat hien), ...), px tang dan, noi suy tuyen tinh, ngoai khoang giu gia tri bien
+    burst_start_p: float = 0.0        # xac suat moi khung (khi chua trong cum) bat dau cum mat
+    burst_len_mean_frames: float = 10.0  # khung, do dai cum trung binh (phan phoi hinh hoc)
 
 
 def target_bbox_size_px(rel_pos_ned: Sequence[float], target_yaw_rad: float, target_pitch_rad: float,
@@ -77,6 +82,9 @@ class SyntheticDetector:
         self.cfg = config or SyntheticConfig()
         self.shape = target_shape
         self.rng = np.random.default_rng(self.cfg.seed)
+        # RNG rieng cho cum mat: chuoi self.rng (hanh vi cu) khong doi khi realdet TAT hay BAT
+        self._burst_rng = np.random.default_rng([self.cfg.seed, 1])
+        self._burst_left = 0
         self._next_frame_t: Optional[float] = None
         self._pending: List[Tuple[float, Detection]] = []  # (thoi diem tra, phat hien)
 
@@ -110,6 +118,19 @@ class SyntheticDetector:
             return size, size
         return target_bbox_size_px(rel, heading[0], heading[1], self.shape, cam.fx, cam.fy)
 
+    def _step_burst(self) -> bool:
+        """Tien mot khung cua mo hinh cum mat; True neu khung nay nam trong cum. Luon rut 2 so tu RNG cum."""
+        u_start, u_len = self._burst_rng.random(2)
+        if self._burst_left > 0:
+            self._burst_left -= 1
+            return True
+        if u_start < self.cfg.burst_start_p:
+            mean = self.cfg.burst_len_mean_frames
+            k = 1 if mean <= 1.0 else 1 + int(math.log1p(-u_len) / math.log1p(-1.0 / mean))  # hinh hoc, trung binh = mean
+            self._burst_left = k - 1
+            return True
+        return False
+
     def _make_frame(self, t: float, target_pos_ned: Sequence[float], own: OwnState,
                     heading=None, target_vel_ned=None) -> List[Detection]:
         c, cam, rng = self.cfg, self.cam, self.rng
@@ -123,9 +144,19 @@ class SyntheticDetector:
         fconf = rng.normal(c.false_conf_mean, c.false_conf_sigma)
 
         px = project_ned_point(cam, own.q_world_body, own.pos_ned, target_pos_ned)
-        if px is not None and r_miss >= c.p_miss:
+        detected = False
+        if px is not None:
             rel = np.asarray(target_pos_ned, float) - np.asarray(own.pos_ned, float)
             w_px, h_px = self._box_size(rel, heading, target_vel_ned)
+            if c.realdet_enabled:
+                in_burst = self._step_burst()
+                tab = np.asarray(c.p_detect_px, float)
+                detected = (not in_burst) and r_miss < float(np.interp(w_px, tab[:, 0], tab[:, 1]))
+            else:
+                detected = r_miss >= c.p_miss
+        elif c.realdet_enabled:
+            self._step_burst()
+        if detected:
             box = self._clip_box(px[0] + c.center_sigma_px * noise[0],
                                  px[1] + c.center_sigma_px * noise[1],
                                  max(1.0, w_px + c.size_sigma_px * noise[2]),

@@ -41,6 +41,14 @@ class TrackerConfig:
     gate_chi2: float = 16.0            # nguong Mahalanobis^2 (3 bac) de nhan phat hien
     reacquire_hits: int = 2            # khop lien tiep can co khi dang COAST de bat lai
     max_los_rate_rad_s: float = 1.5    # rad/s, toc do goc toi da hop ly (kiem tra xac nhan)
+    # Khi COAST: co bbox phai trong [1/k, k] lan f*S/r_nho. k=2: khoang cach nho troi ~ +-30% sau
+    # vai giay + bbox doi ti le do doi huong nhin; G2 (x0.6, x1.6) van qua; bbox gia 21 px vs ~195 px bi chan.
+    size_ratio_max: float = 2.0
+    # sigma them theo truc pixel bi cat khi bbox cham mep: tam do lech toi ~ nua phan bi cat (<= nua bbox).
+    # UOC LUONG, chua kiem bang du lieu that (30 px khong du cho ca C; 100 va 300 deu xanh)
+    edge_clip_sigma_px: float = 100.0
+    # Sai so tuong doi cua co bbox nho khi dung lai tam that cua bbox bi cat (UOC LUONG, chua kiem du lieu that)
+    edge_rebuild_rel_sigma: float = 0.3
     attitude_sigma_rad: float = 0.4 * math.pi / 180.0  # rad, nhieu tu the FC (moi truc), cong vao nhieu do goc
     own_buffer_s: float = 1.5          # s, do dai bo dem OwnState
     own_back_jump_s: float = 1.0       # s, OwnState lui hon nguong so voi mau cuoi -> xoa bo dem + khoi tao lai
@@ -84,6 +92,7 @@ class SingleTargetTracker:
         self._hits = 0
         self._confirmed = False
         self._pending: Optional[Tuple[float, np.ndarray]] = None
+        self._size_wh: Optional[Tuple[float, float]] = None   # (w, h) cua lan khop khong bi cat gan nhat
         self.range.reset()
 
     @property
@@ -184,18 +193,36 @@ class SingleTargetTracker:
         self._pending = None
 
     def _apply(self, z: np.ndarray, t: float, d: Detection) -> None:
+        R = np.eye(3) * self._sigma_rad ** 2
+        mw, mh = self._size_wh if self._size_wh else (None, None)
+        sx = self._rebuild_axis(d.cx, d.w, self.cam.width, mw)
+        sy = self._rebuild_axis(d.cy, d.h, self.cam.height, mh)
+        if sx[1] is not None or sy[1] is not None:
+            # bbox bi cat: tam do khong phai tam that. Dung lai tam theo truc bi cat (canh con thay +
+            # co nho), tang nhieu do theo huong truc pixel do tuy phan bi cat.
+            q = self._attitude_at(d.t_capture)
+            f = 0.5 * (self.cam.fx + self.cam.fy)
+            z0 = pixel_to_los_ned(self.cam, q, d.cx, d.cy)
+            z = pixel_to_los_ned(self.cam, q, sx[0], sy[0])
+            for (c, sig), (dx, dy) in ((sx, (1.0, 0.0)), (sy, (0.0, 1.0))):
+                if sig is not None:
+                    e = pixel_to_los_ned(self.cam, q, d.cx + dx, d.cy + dy) - z0
+                    e = e / np.linalg.norm(e)
+                    R = R + (sig / f) ** 2 * np.outer(e, e)
         x, P, S, nu, _ = self._innovation(z, t)
+        if sx[1] is not None or sy[1] is not None:
+            S = P[:3, :3] + R
         K = P[:, :3] @ np.linalg.inv(S)
         x = x + K @ nu
         H = np.hstack([np.eye(3), np.zeros((3, 3))])
         I_KH = np.eye(6) - K @ H
-        R = np.eye(3) * self._sigma_rad ** 2
         P = I_KH @ P @ I_KH.T + K @ R @ K.T
         u = x[:3] / np.linalg.norm(x[:3])
         v = x[3:] - np.dot(x[3:], u) * u
         self._x, self._P = np.concatenate([u, v]), P
         self._t_f = self._t_hit = t
         self._hits += 1
+        self._note_size(d)
         self.range.update(t, d.w, d.h, d.cx, d.cy)
 
     # ---- API ----
@@ -242,6 +269,7 @@ class SingleTargetTracker:
             if cands:
                 d, z = max(cands, key=lambda c: c[0].conf)
                 self._init_filter(z, d.t_capture)
+                self._note_size(d)
                 self.range.update(d.t_capture, d.w, d.h, d.cx, d.cy)
         elif cands:
             best = None
@@ -258,11 +286,15 @@ class SingleTargetTracker:
                     d, z = max(cands, key=lambda c: c[0].conf)
                     self._reset_track()
                     self._init_filter(z, d.t_capture)
+                    self._note_size(d)
                     self.range.update(d.t_capture, d.w, d.h, d.cx, d.cy)
             else:
                 d, z, _ = best
                 accept = True
-                if coasting and cfg.reacquire_hits > 1:
+                if coasting and not self._size_ok(d):
+                    self._pending = None
+                    accept = False
+                elif coasting and cfg.reacquire_hits > 1:
                     p = self._pending
                     accept = (p is not None and d.t_capture > p[0] and
                               angle_between(p[1], z) <= cfg.max_los_rate_rad_s * (d.t_capture - p[0])
@@ -281,6 +313,43 @@ class SingleTargetTracker:
             self._reset_track()                     # tu bao ve: trang thai loc hong -> khoi tao lai
             self.stats.filter_resets += 1
         return self._output(t_now, own if own_ok else (self._own[-1] if self._own else None))
+
+    def _clipped_axes(self, d: Detection) -> Tuple[bool, bool]:
+        """(cat theo x, cat theo y): bbox cham mep khung (cung nguong voi range estimator)."""
+        W, H, m = self.cam.width, self.cam.height, self.range.cfg.edge_margin_px
+        return (d.cx - d.w / 2 <= m or d.cx + d.w / 2 >= W - m,
+                d.cy - d.h / 2 <= m or d.cy + d.h / 2 >= H - m)
+
+    def _note_size(self, d: Detection) -> None:
+        """Nho co bbox cua lan khop hop le gan nhat (bo qua bbox bi cat: co khong dang tin)."""
+        if not any(self._clipped_axes(d)):
+            self._size_wh = (d.w, d.h)
+
+    def _rebuild_axis(self, c: float, dim: float, lim: float,
+                      mem: Optional[float]) -> Tuple[float, Optional[float]]:
+        """Mot truc pixel: (tam dung lai, sigma px them) hoac (c, None) neu khong bi cat.
+        Chi mot mep bi cat va co co nho: tam that = canh con thay -/+ nua co nho (dung max(dim, mem));
+        sigma = rel * phan bi cat / 2 (co nho co the cu). Khong co co nho hoac cat ca hai mep: sigma lon."""
+        m = self.range.cfg.edge_margin_px
+        lo, hi = c - dim / 2 <= m, c + dim / 2 >= lim - m
+        if not (lo or hi):
+            return c, None
+        if mem is None or (lo and hi):
+            return c, self.cfg.edge_clip_sigma_px
+        use = max(dim, mem)
+        c2 = c + dim / 2 - use / 2 if lo else c - dim / 2 + use / 2
+        return c2, 0.5 * self.cfg.edge_rebuild_rel_sigma * (use - dim)
+
+    def _size_ok(self, d: Detection) -> bool:
+        """Dang COAST: co bbox phai trong [1/size_ratio_max, size_ratio_max] lan co bbox nho cuoi
+        (bbox cham mep bi cat nen chi chan tren). Chua nho co nao -> khong chan."""
+        if self._size_wh is None:
+            return True
+        ref = max(self._size_wh)
+        s = max(d.w, d.h)
+        if s > self.cfg.size_ratio_max * ref:
+            return False
+        return s >= ref / self.cfg.size_ratio_max or any(self._clipped_axes(d))
 
     def _state_finite(self) -> bool:
         return bool(np.all(np.isfinite(self._x)) and np.all(np.isfinite(self._P))

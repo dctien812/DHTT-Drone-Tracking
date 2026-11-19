@@ -1,0 +1,11 @@
+{
+ "tag": "DD",
+ "weights": "/mnt/d/Personal/Drone-Tracking/vision/results/b1a/train/runs/b1a_DD_s0/weights/best.pt",
+ "weights_sha256": "e637d4259562f95bb636f71dce728e29a5a612ffc2720b4ba933cd7b95378f68",
+ "cls": 0,
+ "torch": "2.15.0+cpu",
+ "threads": 8,
+ "device": "cpu",
+ "ultralytics": "8.4.215",
+ "conf": 0.01
+}

@@ -1,0 +1,12 @@
+corr>=0.95: 804 khung kiem thu; theo doan: {"E'/Bottom_Up": 54, "E'/Horizontal": 430, 'E/Bottom_Up': 4, 'E/Horizontal': 300, 'E/Top_Down': 16}
+   cap (doan kiem thu, doan hoc/val gan nhat): {("E'/Bottom_Up", "D'/Bottom_Up"): 36, ("E'/Bottom_Up", 'D/Top_Down'): 18, ("E'/Horizontal", 'D/Horizontal'): 26, ("E'/Horizontal", "D'/Top_Down"): 15, ("E'/Horizontal", "D'/Horizontal"): 113, ("E'/Horizontal", 'D/Bottom_Up'): 2, ("E'/Horizontal", "D'/Bottom_Up"): 200, ("E'/Horizontal", 'D/Top_Down'): 74, ('E/Bottom_Up', "D'/Bottom_Up"): 3, ('E/Bottom_Up', 'D/Bottom_Up'): 1, ('E/Horizontal', 'D/Bottom_Up'): 141, ('E/Horizontal', 'D/Horizontal'): 89, ('E/Horizontal', "D'/Bottom_Up"): 51, ('E/Horizontal', "D'/Horizontal"): 9, ('E/Horizontal', 'D/Top_Down'): 10, ('E/Top_Down', 'D/Top_Down'): 3, ('E/Top_Down', "D'/Horizontal"): 12, ('E/Top_Down', 'D/Horizontal'): 1}
+corr>=0.98: 28 khung kiem thu; theo doan: {"E'/Horizontal": 28}
+   cap (doan kiem thu, doan hoc/val gan nhat): {("E'/Horizontal", "D'/Horizontal"): 27, ("E'/Horizontal", "D'/Bottom_Up"): 1}
+    E'/Horizontal 0_0_000182 <-> D'/Horizontal 0_0_000673 corr 0.9884 rms 10.25
+    E'/Horizontal 0_0_000183 <-> D'/Horizontal 0_0_000673 corr 0.9878 rms 10.41
+    E'/Horizontal 0_0_000181 <-> D'/Horizontal 0_0_000673 corr 0.9875 rms 10.59
+    E'/Horizontal 0_0_000184 <-> D'/Horizontal 0_0_000673 corr 0.9868 rms 10.74
+    E'/Horizontal 0_0_000180 <-> D'/Horizontal 0_0_000673 corr 0.9863 rms 11.09
+    E'/Horizontal 0_0_000174 <-> D'/Horizontal 0_0_000667 corr 0.9862 rms 11.29
+    E'/Horizontal 0_0_000179 <-> D'/Horizontal 0_0_000673 corr 0.9861 rms 11.19
+    E'/Horizontal 0_0_000175 <-> D'/Horizontal 0_0_000667 corr 0.9859 rms 11.38

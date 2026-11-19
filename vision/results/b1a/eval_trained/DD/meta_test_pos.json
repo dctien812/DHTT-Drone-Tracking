@@ -1,0 +1,9 @@
+{
+ "set": "test_pos",
+ "n_images": 8552,
+ "n_det_rows": 7706,
+ "infer_seconds": 175.3,
+ "ms_per_tile": 20.5,
+ "wall_incl_cropping_s": 354.6,
+ "n_bg_none": 0
+}

@@ -32,3 +32,31 @@ vision/results/verify/v1rerun/raw/
 
 # Model da xuat cho Raspberry Pi (nang, tao lai duoc)
 pi/models/
+
+# Cau hinh that cua Pi (ten dang nhap, IP noi bo) - khong dua len GitHub
+pi/pi.env
+
+# Moi truong Python rieng cho card AMD (nang, tao lai duoc)
+vision/.venv-gpu/
+
+# anh nguoi dung gui, khong dua len GitHub
+.office/images/
+
+# Ket qua sinh tu video/anh cua chu du an - khong dua len GitHub
+vision/results/b1a/realvideo1/
+
+# Ket qua nhan dien: anh trich tu bo du lieu ngoai, file tho nang, log co duong dan may
+vision/results/gpu_bench/
+vision/results/b1a/**/*.jpg
+vision/results/b1a/**/*.png
+vision/results/mmfw_stats/samples/
+vision/results/mmfw_stats/boxes.csv
+vision/results/**/raw_*.csv
+*.npz
+*.cache
+vision/results/b1a/train/log_*.txt
+
+# Anh chup thu camera (trong nha) - khong dua len GitHub
+pi/camtest_*.jpg
+pi/camtest_*.png
+vision/results/b1a/eval_trained/**/rows_*.json

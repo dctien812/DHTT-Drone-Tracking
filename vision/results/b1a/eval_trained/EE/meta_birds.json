@@ -1,0 +1,7 @@
+{
+ "set": "birds",
+ "n_images": 150,
+ "n_det_rows": 13,
+ "infer_seconds": 5.0,
+ "ms_per_tile": 33.09
+}

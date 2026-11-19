@@ -1,0 +1,7 @@
+{
+ "set": "train_pos",
+ "n_images": 1153,
+ "n_det_rows": 10450,
+ "seconds": 37.7,
+ "imgs_per_s": 30.55
+}

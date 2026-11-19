@@ -20,7 +20,7 @@ from .config import AppConfig, load_config
 from .guidance import yaw_from_quat
 from .gimbal import camera_attitude
 from .gimbal_control import GimbalController
-from .logger import CycleLogger, GimbalLogger
+from .logger import CycleLogger, GimbalLogger, SearchLogger
 from .mavlink_io import MavlinkLink
 from .supervisor import SupervisorInput, Supervisor, SupState
 from .range_estimator import RangeConfig
@@ -51,7 +51,8 @@ class App:
     def __init__(self, cfg: AppConfig, source: DetectionSource, link: MavlinkLink,
                  logger: Optional[CycleLogger] = None, auto_engage: bool = False,
                  stop_file: Optional[str] = None, clock=time.monotonic,
-                 gimbal_port=None, gimbal_logger: Optional[GimbalLogger] = None):
+                 gimbal_port=None, gimbal_logger: Optional[GimbalLogger] = None,
+                 search_logger: Optional[SearchLogger] = None):
         if cfg.gimbal.enabled and gimbal_port is None:
             raise ValueError("gimbal.enabled can gimbal_port")
         if cfg.gimbal.enabled and cfg.camera.gimbal_enabled:
@@ -70,9 +71,10 @@ class App:
             from simtools.gimbal_model import GimbalModel
             c = cfg.camera
             self.gimbal = GimbalModel(c.gimbal_travel_deg, c.gimbal_rate_dps, c.gimbal_lag_s)
-        self.sup = Supervisor(cfg.supervisor, cfg.guidance)
+        self.sup = Supervisor(cfg.supervisor, cfg.guidance, cfg.search, cfg.gimbal)
         self.gimbal_port = gimbal_port if cfg.gimbal.enabled else None
         self.gimbal_logger = gimbal_logger
+        self.search_logger = search_logger
         self.gimbal_ctrl = GimbalController(cfg.gimbal) if cfg.gimbal.enabled else None
         self._stop = False
         self.stats = {"ticks": 0, "sent": 0, "aborts": 0, "rtl_requests": 0}
@@ -114,7 +116,8 @@ class App:
             engage = self._engage_signal()
             hb, pa = self.link.heartbeat_age(now), self.link.pose_age(now)
             out = self.sup.step(SupervisorInput(t=now, track=track, own=own, engage=engage,
-                                                heartbeat_age_s=hb, pose_age_s=pa, loop_dt_s=loop_dt))
+                                                heartbeat_age_s=hb, pose_age_s=pa, loop_dt_s=loop_dt,
+                                                gimbal_delta_rad=delta_act))
             if out.send and out.cmd is not None:
                 yaw = out.cmd.yaw_rad
                 if yaw is None and own is not None:
@@ -122,7 +125,8 @@ class App:
                 self.link.send_velocity(out.cmd.vel_ned, yaw)
                 self.stats["sent"] += 1
             if self.gimbal_port is not None and own is not None:
-                gc = self.gimbal_ctrl.step(now, own.q_world_body, track)
+                gc = self.gimbal_ctrl.step(now, own.q_world_body, track, scan_delta_rad=(
+                    None if out.search is None else out.search.scan_delta_rad))
                 self.gimbal_port.command(now, gc.delta_cmd_rad)
                 if self.gimbal_logger:
                     w, _x, y, z = own.q_world_body
@@ -133,6 +137,12 @@ class App:
                         None if gc.elev_los_rad is None else dg(gc.elev_los_rad),
                         None if gc.elev_aim_rad is None else dg(gc.elev_aim_rad),
                         self.sup.guidance.last_elev_ref_deg, gc.sat, dg(theta))
+            if self.search_logger and out.search is not None:
+                si = out.search
+                yaw = None if out.cmd is None or out.cmd.yaw_rad is None else math.degrees(out.cmd.yaw_rad)
+                self.search_logger.log(now, si.ep_id, si.ep_s, si.phase, si.run_s, si.closed, si.climb_m,
+                                       None if si.scan_delta_rad is None else math.degrees(si.scan_delta_rad),
+                                       yaw, si.r_hat)
             if out.request_rtl:
                 self.link.request_rtl()
                 self.stats["rtl_requests"] += 1
@@ -184,7 +194,8 @@ def build_source(args, cfg: AppConfig, gimbal_port=None) -> DetectionSource:
         from simtools.sim_truth_source import SimTruthSource
         return SimTruthSource(target_url=args.sim_target, chaser_url=args.sim_chaser, camera=cfg.camera.to_model(),
                               seed=args.sim_seed, blackout_file=args.sim_blackout_file,
-                              gimbal=_make_gimbal(cfg), target_shape=cfg.target_shape, gimbal_port=gimbal_port)
+                              gimbal=_make_gimbal(cfg), target_shape=cfg.target_shape, gimbal_port=gimbal_port,
+                              synth=cfg.synthetic)
     if args.source == "camera":
         return CameraHailoSource()
     raise ValueError("nguon la: %s" % args.source)
@@ -218,10 +229,13 @@ def main(argv=None) -> int:
         from simtools.servo_model import ServoModel, SimGimbalPort
         gimbal_port = SimGimbalPort(ServoModel.from_config(cfg.gimbal))
         gimbal_logger = GimbalLogger(os.path.join(os.path.dirname(log_path), "gimbal.csv"))
+    search_logger = None
+    if cfg.search.enabled:
+        search_logger = SearchLogger(os.path.join(os.path.dirname(log_path), "search.csv"))
     source = build_source(a, cfg, gimbal_port=gimbal_port)
     logger = CycleLogger(log_path, cfg.log_queue)
     app = App(cfg, source, link, logger, auto_engage=a.auto_engage, stop_file=a.stop_file,
-              gimbal_port=gimbal_port, gimbal_logger=gimbal_logger)
+              gimbal_port=gimbal_port, gimbal_logger=gimbal_logger, search_logger=search_logger)
     signal.signal(signal.SIGINT, app.request_stop)
     signal.signal(signal.SIGTERM, app.request_stop)
     rc = 2
@@ -234,6 +248,8 @@ def main(argv=None) -> int:
         logger.close()
         if gimbal_logger:
             gimbal_logger.close()
+        if search_logger:
+            search_logger.close()
         link.close()
         print("[dtrack] ket thuc: %s, log roi %d dong" % (app.stats, logger.dropped), flush=True)
     return rc

@@ -1,0 +1,7 @@
+{
+ "set": "val_pos",
+ "n_images": 506,
+ "n_det_rows": 532,
+ "infer_seconds": 16.0,
+ "ms_per_tile": 31.68
+}

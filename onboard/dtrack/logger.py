@@ -33,6 +33,10 @@ GIMBAL_COLUMNS = ["t", "mode", "delta_cmd_deg", "delta_act_deg", "delta_rate_dps
                   "elev_aim_deg", "elev_ref_deg", "sat", "theta_deg"]
 
 
+SEARCH_COLUMNS = ["t", "ep_id", "ep_s", "phase", "run_s", "closed", "climb_m", "scan_delta_deg", "yaw_cmd_deg",
+                  "r_hat"]
+
+
 class CycleLogger:
     columns = COLUMNS
 
@@ -97,6 +101,20 @@ class GimbalLogger(CycleLogger):
             sat: bool, theta_deg: float) -> None:
         row = [t, mode, delta_cmd_deg, delta_act_deg, delta_rate_dps, elev_los_deg, elev_aim_deg,
                elev_ref_deg, int(sat), theta_deg]
+        try:
+            self._q.put_nowait([_f(x) for x in row])
+        except queue.Full:
+            self.dropped += 1
+
+
+class SearchLogger(CycleLogger):
+    """search.csv: mot dong moi chu ky khi khoi tim lai bat (goc theo do; None -> o trong)."""
+    columns = SEARCH_COLUMNS
+
+    def log(self, t: float, ep_id: int, ep_s: Optional[float], phase: Optional[int], run_s: Optional[float],
+            closed: bool, climb_m: Optional[float], scan_delta_deg: Optional[float],
+            yaw_cmd_deg: Optional[float], r_hat: Optional[float]) -> None:
+        row = [t, ep_id, ep_s, phase, run_s, int(closed), climb_m, scan_delta_deg, yaw_cmd_deg, r_hat]
         try:
             self._q.put_nowait([_f(x) for x in row])
         except queue.Full:

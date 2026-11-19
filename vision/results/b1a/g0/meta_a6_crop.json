@@ -1,0 +1,9 @@
+{
+ "set": "a6_crop",
+ "n_images": 20,
+ "n_det_rows": 51,
+ "seconds": 0.0,
+ "imgs_per_s": null,
+ "imgsz": 480,
+ "crop": "480x480 quanh tam nhan, kep vao anh"
+}

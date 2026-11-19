@@ -65,3 +65,9 @@ bash scripts/run_train_v2.sh --epochs 30 --limit 4200                           
 bash scripts/run_eval_v2.sh <tag> <weights>                                         # tap sach + 120 khung nhan tay
 bash scripts/run_video_v2.sh <tag> <weights> detect ; bash scripts/run_py_v2.sh summarize_v2.py ; bash scripts/run_py_v2.sh compare_v2.py
 ```
+
+## B1a: nhan dien may bay canh bang (yolov8n goc lop airplane vs huan luyen them; ket qua: `results/b1a/B1A_REPORT.md`)
+Kiem cheo theo may bay (hoc 2 bo, kiem 2 bo con lai), mot vong, mot seed, khong tinh chinh. Ket luan tam: huan luyen them KHONG hon model goc
+mot cach on dinh tren tap kiem cheo (EE Top_Down 0,129 so voi 0,402; bao dong gia nhieu hon). Model "final" bat may bay tren video that 1
+tot hon goc o doan lien tuc (98,6% so voi 84,2%) nhung khong hon o khung rai (69,4% so voi 71,8%), va phat hien gia gap ~17 lan (fin1: 69 so voi 4 tren 269 khung; fin2 phong 2304 px: 441). Mac dinh van dung `yolov8n.pt` goc, lop airplane,
+nguong 0,12; final la ung vien vong sau (them nen kho lam mau am). Script: `scripts/b1a/` (lenh chay lai o cuoi bao cao).

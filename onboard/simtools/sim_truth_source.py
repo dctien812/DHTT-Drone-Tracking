@@ -7,6 +7,7 @@ OwnState dua cho SyntheticDetector la tu the THAT cua chaser (camera that nhin t
 """
 from __future__ import annotations
 
+import dataclasses
 import math
 import os
 import time
@@ -65,7 +66,7 @@ class SimTruthSource(DetectionSource):
         self.cam = camera or CameraModel()
         cfg = synth or SyntheticConfig(frame_rate_hz=30.0, latency_s=0.06, center_sigma_px=1.5, size_sigma_px=1.0,
                                        p_miss=0.20, p_false=0.05, clip_to_frame=True)
-        cfg.seed = seed
+        cfg = dataclasses.replace(cfg, seed=seed)  # khong ghi vao cfg dung chung
         self.det = SyntheticDetector(self.cam, cfg, target_shape=target_shape)
         self.tgt = SimStateReader(target_url, clock=clock)
         self.chs = SimStateReader(chaser_url, clock=clock)

@@ -10,13 +10,15 @@ Supervisor quyet dinh LENH CUOI CUNG gui cho FC. Quy tac:
 """
 from __future__ import annotations
 
+import dataclasses
 import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
-from .config import GuidanceConfig, SupervisorConfig
-from .guidance import Guidance
+from .config import GimbalConfig, GuidanceConfig, SearchConfig, SupervisorConfig
+from .guidance import Guidance, yaw_from_quat
+from .search import SearchEpisode, SearchInfo, SearchPlanner
 from .types import GuidanceCommand, OwnState, TrackState, TrackStatus
 
 GUIDED_MODE = "GUIDED"
@@ -40,6 +42,7 @@ class SupervisorInput:
     heartbeat_age_s: float            # tuoi HEARTBEAT cuoi cua FC (inf = chua tung nhan)
     pose_age_s: float                 # tuoi du lieu tu the (inf = chua co)
     loop_dt_s: float = 0.0            # chu ky vong lap vua roi
+    gimbal_delta_rad: Optional[float] = None   # goc khop THUC (chi dung khi bat khoi tim lai)
 
 
 @dataclass
@@ -50,6 +53,7 @@ class SupervisorOutput:
     request_rtl: bool = False
     reason: str = ""
     engaged: bool = False
+    search: Optional[SearchInfo] = None   # chi co khi search.enabled va dang engage
 
 
 def _cmd_ok(cmd: GuidanceCommand) -> bool:
@@ -59,14 +63,34 @@ def _cmd_ok(cmd: GuidanceCommand) -> bool:
 
 class Supervisor:
     def __init__(self, cfg: Optional[SupervisorConfig] = None,
-                 gcfg: Optional[GuidanceConfig] = None):
+                 gcfg: Optional[GuidanceConfig] = None,
+                 scfg: Optional[SearchConfig] = None,
+                 gimbal_cfg: Optional[GimbalConfig] = None):
         self.cfg = cfg or SupervisorConfig()
         self.guidance = Guidance(gcfg or GuidanceConfig())
         self.state = SupState.IDLE
+        self._search_on = bool(scfg is not None and scfg.enabled)
+        if self._search_on:
+            gm = gimbal_cfg or GimbalConfig()
+            self._episode = SearchEpisode(scfg, self.cfg.coast_follow_s)
+            self._planner = SearchPlanner(scfg, math.radians(gm.delta_min_deg), math.radians(gm.delta_max_deg))
+            self._delta_init = math.radians(gm.delta_init_deg)
         self._reset_engaged()
         self.abort_reasons: List[str] = []
 
+    def _reset_search(self) -> None:
+        """Dong dot mat (disengage, ABORT hoi phuc)."""
+        self._episode.reset()
+        self._searching = False                     # planner da begin trong dot hien tai
+        self._search_yaw: Optional[float] = None    # yaw quet cuoi (giu khi TRACK chua du hold)
+        self._last_yaw: Optional[float] = None      # yaw cua lenh cuoi (diem bat dau quet yaw)
+        self._search_climb = 0.0
+        self._last_vz: Optional[float] = None       # vz va t cua lenh cuoi (gioi han gia toc dung khi quet)
+        self._last_t: Optional[float] = None
+
     def _reset_engaged(self) -> None:
+        if self._search_on:
+            self._reset_search()
         self._engage_t: Optional[float] = None
         self._had_target = False
         self._coast_t: Optional[float] = None
@@ -128,6 +152,8 @@ class Supervisor:
             self._lost_t = inp.t
             self._had_target = False
             self._coast_t = None
+            if self._search_on:
+                self._reset_search()
 
         # ---- trang thai theo muc tieu ----
         st = inp.track.status
@@ -164,10 +190,26 @@ class Supervisor:
                 if self._lost_t is None:
                     self._lost_t = inp.t
 
+        # ---- khoi tim lai: dong ho dot mat (chi khi bat) ----
+        tick = None
+        sinfo_scan: Optional[float] = None
+        sinfo_r: Optional[float] = None
+        searching = False
+        if self._search_on:
+            tick = self._episode.update(inp.t, st == TrackStatus.TRACK, self._had_target)
+            searching = tick.ep_s is not None and not tick.closed and tick.phase >= 1
+            if tick.closed:
+                self._searching = False
+
         # ---- lenh ----
         request_rtl = False
-        if blind:
+        if searching:
+            cmd, reason, sinfo_scan = self._step_search(inp, tick, st == TrackStatus.TRACK)
+            sinfo_r = self.guidance.last_r_hat
+        elif blind:
             cmd = self.guidance.step_blind(inp.track, own)
+            if self._search_on:
+                sinfo_r = self.guidance.last_r_hat
         elif self.state in (SupState.TRACK, SupState.COAST):
             cmd = self.guidance.step(inp.track, own)
         else:
@@ -179,10 +221,63 @@ class Supervisor:
             cmd = GuidanceCommand(t=inp.t, vel_ned=(0.0, 0.0, 0.0), yaw_rad=None, valid=True,
                                   reason="brake:bad_cmd")
             reason = (reason + ";bad_cmd").strip(";")
-        if (self.state in (SupState.LOST, SupState.SEARCH) and self._lost_t is not None
-                and inp.t - self._lost_t > c.lost_rtl_s and c.rtl_on_lost and not self._rtl_sent):
+        if self._search_on and self._had_target:
+            # da tung thay muc tieu: RTL khi dot mat het han (bat ke trang thai tracker); chua tung thay: luat cu
+            want_rtl = tick.expired
+        else:
+            want_rtl = (self.state in (SupState.LOST, SupState.SEARCH) and self._lost_t is not None
+                        and inp.t - self._lost_t > c.lost_rtl_s)
+        if want_rtl and c.rtl_on_lost and not self._rtl_sent:
             self._rtl_sent = True
             request_rtl = True
             reason = (reason + ";rtl_requested").strip(";")
+        sinfo = None
+        if self._search_on:
+            if cmd.yaw_rad is not None:
+                self._last_yaw = cmd.yaw_rad
+            self._last_vz, self._last_t = cmd.vel_ned[2], inp.t
+            sinfo = SearchInfo(tick.ep_id, tick.ep_s, tick.phase, tick.run_s, tick.closed,
+                               self._search_climb if searching else 0.0, sinfo_scan, sinfo_r)
         return SupervisorOutput(self.state, True, cmd, request_rtl=request_rtl,
-                                reason=reason or cmd.reason, engaged=True)
+                                reason=reason or cmd.reason, engaged=True, search=sinfo)
+
+    def _step_search(self, inp: SupervisorInput, tick, tracking: bool):
+        """Pha >= 1 cua dot mat (khong phai tick dong dot): treo bang step_hover, quet khop + yaw (+ leo o pha 2).
+        TRACK chua du hold (S-3): van treo, khop ngung quet, yaw giu. Tra (cmd, reason, scan_delta_rad|None)."""
+        own = inp.own
+        if not self._searching:
+            yaw0 = self._last_yaw if self._last_yaw is not None else yaw_from_quat(own.q_world_body)
+            delta0 = inp.gimbal_delta_rad
+            if delta0 is None or not math.isfinite(delta0):
+                delta0 = self._delta_init
+            self._planner.begin(inp.t, own, yaw0, delta0, self.guidance.stopped_target_ned(inp.t, own))
+            self._searching = True
+            self._search_yaw = yaw0
+            self._search_climb = 0.0
+        # track thay bang LOST: step_hover khong duoc duoi muc tieu ke ca khi het bo nho (khi do chi phanh)
+        hov = self.guidance.step_hover(TrackState(t=inp.track.t, status=TrackStatus.LOST), own)
+        vx, vy, vz = hov.vel_ned
+        if tracking:
+            self.state = SupState.TRACK
+            scan = None
+            why = "search:hold"
+        else:
+            self.state = SupState.LOST
+            so = self._planner.step(inp.t, own, tick.phase)
+            if so.vel_ned[2] < 0.0:
+                vz = so.vel_ned[2]
+            if so.yaw_rad is not None:
+                self._search_yaw = so.yaw_rad
+            self._search_climb = so.climb_m
+            scan = so.scan_delta_rad
+            why = so.reason
+        if self._last_vz is not None and self._last_t is not None:
+            # vz khong nhay qua gioi han gia toc dung (nhu guidance)
+            g = self.guidance.cfg
+            lim = g.a_max_z_mps2 * min(max(inp.t - self._last_t, 1e-3), g.dt_max_s)
+            vz = max(self._last_vz - lim, min(self._last_vz + lim, vz))
+        cmd = GuidanceCommand(t=inp.t, vel_ned=(vx, vy, vz), yaw_rad=self._search_yaw, valid=True, reason=why)
+        if self.guidance.prev is not None:
+            # guidance.step tiep quan sau khi dong dot phai xuat phat tu yaw/vz quet, khong tu yaw/vz noi bo cua step_hover
+            self.guidance.prev = dataclasses.replace(self.guidance.prev, vel_ned=cmd.vel_ned, yaw_rad=cmd.yaw_rad)
+        return cmd, why, scan

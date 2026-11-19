@@ -1,0 +1,9 @@
+{
+ "set": "scan",
+ "n_images": 1013,
+ "n_det_rows": 168643,
+ "seconds": 589.5,
+ "imgs_per_s": 1.72,
+ "tiles_per_frame": 32,
+ "n_tile_images": 32416
+}

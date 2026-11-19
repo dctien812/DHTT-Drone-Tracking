@@ -1,0 +1,7 @@
+{
+ "set": "test_off",
+ "n_images": 10103,
+ "n_det_rows": 63242,
+ "seconds": 319.9,
+ "imgs_per_s": 31.58
+}

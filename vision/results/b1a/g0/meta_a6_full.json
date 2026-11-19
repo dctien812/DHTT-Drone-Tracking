@@ -1,0 +1,8 @@
+{
+ "set": "a6_full",
+ "n_images": 20,
+ "n_det_rows": 65,
+ "seconds": -0.3,
+ "imgs_per_s": -74.69,
+ "imgsz": 640
+}

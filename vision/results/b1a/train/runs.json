@@ -1,0 +1,58 @@
+{
+ "torch": "2.9.1+rocm7.2.1",
+ "ultralytics": "8.4.215",
+ "folds": {
+  "EE": {
+   "seed": 0,
+   "wall_s": 1774.6,
+   "epochs_run": 60,
+   "epochs_planned": 60,
+   "patience": 15,
+   "s_per_epoch": 29.58,
+   "results_csv_time_last_s": 1760.29,
+   "map50_last": 0.99474,
+   "best_epoch_by_fitness": 60,
+   "map50_at_best_epoch": 0.99474,
+   "best_pt": "D:\\Personal\\Drone-Tracking\\vision\\results\\b1a\\train\\runs\\b1a_EE_s0\\weights\\best.pt",
+   "best_pt_sha256": "706ef6217944b8b9a2b8a842d45d0fc8efcda76362af660950f8e6262bd10758",
+   "save_dir": "D:\\Personal\\Drone-Tracking\\vision\\results\\b1a\\train\\runs\\b1a_EE_s0",
+   "error": null,
+   "device_name": "AMD Radeon RX 9060 XT"
+  },
+  "DD": {
+   "seed": 0,
+   "wall_s": 4396.1,
+   "epochs_run": 60,
+   "epochs_planned": 60,
+   "patience": 15,
+   "s_per_epoch": 73.27,
+   "results_csv_time_last_s": 4381.88,
+   "map50_last": 0.995,
+   "best_epoch_by_fitness": 56,
+   "map50_at_best_epoch": 0.995,
+   "best_pt": "D:\\Personal\\Drone-Tracking\\vision\\results\\b1a\\train\\runs\\b1a_DD_s0\\weights\\best.pt",
+   "best_pt_sha256": "e637d4259562f95bb636f71dce728e29a5a612ffc2720b4ba933cd7b95378f68",
+   "save_dir": "D:\\Personal\\Drone-Tracking\\vision\\results\\b1a\\train\\runs\\b1a_DD_s0",
+   "error": null,
+   "device_name": "AMD Radeon RX 9060 XT"
+  },
+  "final": {
+   "seed": 0,
+   "wall_s": 3866.4,
+   "epochs_run": 60,
+   "epochs_planned": 60,
+   "patience": 15,
+   "s_per_epoch": 64.44,
+   "results_csv_time_last_s": 3845.02,
+   "map50_last": 0.995,
+   "best_epoch_by_fitness": 58,
+   "map50_at_best_epoch": 0.99499,
+   "best_pt": "D:\\Personal\\Drone-Tracking\\vision\\results\\b1a\\train\\runs\\b1a_final_s0\\weights\\best.pt",
+   "best_pt_sha256": "8c03e94782aabf7288df88d7b092bf428de80725b5afec72fe0cc130b5421e82",
+   "save_dir": "D:\\Personal\\Drone-Tracking\\vision\\results\\b1a\\train\\runs\\b1a_final_s0",
+   "error": null,
+   "device_name": "AMD Radeon RX 9060 XT"
+  }
+ },
+ "total_wall_s": 10037.1
+}

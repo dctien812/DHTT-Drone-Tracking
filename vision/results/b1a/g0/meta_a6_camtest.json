@@ -1,0 +1,16 @@
+{
+ "set": "a6_camtest",
+ "n_images": 1,
+ "n_det_rows": 54,
+ "seconds": 0.5,
+ "imgs_per_s": 2.02,
+ "orig_size": [
+  1536,
+  864
+ ],
+ "resized": [
+  2304,
+  1296
+ ],
+ "n_tiles": 32
+}

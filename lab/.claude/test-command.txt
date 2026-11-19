@@ -1,0 +1,1 @@
+wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/d/Personal/Drone-Tracking/lab && ~/venv-vision/bin/python -m pytest -q -x"

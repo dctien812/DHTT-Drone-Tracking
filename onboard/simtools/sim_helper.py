@@ -35,6 +35,30 @@ def log(msg):
     print("[helper] %s" % msg, flush=True)
 
 
+def resolve_post_s(post_s, blackout_dive, blackout_brake):
+    """--post-s hieu luc: gia tri nguoi dung, khong co thi 15 s cho ca mat hinh + cam/ham, khong thi None (ket thuc kieu cu)."""
+    if post_s is None and (blackout_dive or blackout_brake is not None):
+        return 15.0
+    return post_s
+
+
+def event_due(now, t_ws, event_at):
+    """Den luc ra su kien (mat hinh / disengage): da qua event_at s ke tu dau cua so do."""
+    return now - t_ws >= event_at
+
+
+def blackout_over(now, blackout_on, blackout_s):
+    """Mat hinh da keo du blackout_s s ke tu luc bat dau."""
+    return now - blackout_on >= blackout_s
+
+
+def run_ended(now, t_ws, window, post_s, blackout_end):
+    """Het vong chay (truoc khi muc tieu phanh): kieu cu = het cua so + 5 s; co post_s = blackout_end + post_s (chua het mat hinh -> chua ket thuc)."""
+    if post_s is None:
+        return now - t_ws >= window + 5.0
+    return blackout_end is not None and now >= blackout_end + post_s
+
+
 class Conn:
     """Mot ket noi MAVLink toi mot SITL, giu SIM_STATE moi nhat (thoi diem nhan, lat, lon, alt, v, euler)."""
 
@@ -144,6 +168,12 @@ def main():
     ap.add_argument("--max-wait", type=float, default=150.0)
     ap.add_argument("--event-at", type=float, default=40.0, help="s sau t_ws cho kich ban mat hinh / disengage")
     ap.add_argument("--blackout-s", type=float, default=3.0)
+    ap.add_argument("--post-s", type=float, default=None,
+                    help="ket thuc vong chay o blackout_end + post_s (mac dinh: cua so + 5 s; 15 khi co --blackout-dive/--blackout-brake)")
+    ap.add_argument("--blackout-dive", action="store_true",
+                    help="scenario blackout + --dive-deg > 0: muc tieu bat dau cam xuong dung luc mat hinh")
+    ap.add_argument("--blackout-brake", type=float, default=None, metavar="DECEL",
+                    help="scenario blackout: muc tieu bat dau ham (stop-file) dung luc mat hinh; DECEL (m/s^2) = TARGET_DECEL cua target_softbrake.py, chi ghi events.json")
     ap.add_argument("--straight", action="store_true", help="muc tieu bay thang (chi ghi vao events.json de bo cham biet)")
     ap.add_argument("--dive-deg", type=float, default=0.0, help="> 0: sau cua so do cho muc tieu cam xuong goc nay (ghi file dive)")
     ap.add_argument("--dive-drop", type=float, default=40.0, help="do cao muc tieu ha xuong (m), chi de ghi events.json va tinh thoi gian giu")
@@ -151,12 +181,21 @@ def main():
     ap.add_argument("--chaser-unblock", default="127.0.0.1:5770")
     ap.add_argument("--target-truth", default="tcp:127.0.0.1:5763")
     a = ap.parse_args()
+    if (a.blackout_dive or a.blackout_brake is not None) and a.scenario != "blackout":
+        ap.error("--blackout-dive/--blackout-brake can --scenario blackout")
+    if a.post_s is not None and a.scenario != "blackout":
+        ap.error("--post-s can --scenario blackout (ket thuc theo blackout_end)")
+    if a.blackout_dive and (a.dive_deg <= 0 or a.blackout_brake is not None):
+        ap.error("--blackout-dive can --dive-deg > 0 va khong di voi --blackout-brake")
+    post_s = resolve_post_s(a.post_s, a.blackout_dive, a.blackout_brake)
     out = a.out
     f_go, f_stop = os.path.join(out, "go"), os.path.join(out, "stop")
     f_ready, f_appup = os.path.join(out, "ready"), os.path.join(out, "app_up")
     f_appstop, f_black = os.path.join(out, "app_stop"), os.path.join(out, "blackout")
     f_dive = os.path.join(out, "dive")
     ev = {"scenario": a.scenario, "speed": a.speed, "straight": bool(a.straight)}
+    if post_s is not None:         # kich ban tim lai: bo cham doc lai tham so (THAM SO KICH BAN)
+        ev["post_s"], ev["event_at"], ev["blackout_s"] = post_s, a.event_at, a.blackout_s
     if a.dive_deg > 0:
         ev["dive_deg"], ev["dive_drop_m"] = a.dive_deg, a.dive_drop
         # thoi gian cam du (drop / vd) + 15 s bay bang truoc khi giam toc cuoi
@@ -286,25 +325,33 @@ def main():
             ev["t_ws"] = t_ws
             log("cua so do bat dau, d3=%.1f" % L["d3"])
         if t_ws is not None:
-            if a.scenario == "blackout" and t_event is None and now - t_ws >= a.event_at:
+            if a.scenario == "blackout" and t_event is None and event_due(now, t_ws, a.event_at):
                 t_event = now
                 open(f_black, "w").close()
                 blackout_on = now
                 ev["blackout_start"] = now
                 log("mat hinh bat dau")
-            if blackout_on is not None and now - blackout_on >= a.blackout_s and os.path.exists(f_black):
+                if a.blackout_dive:         # muc tieu cam xuong dung luc mat hinh (target_dive.py thay dive-file)
+                    open(f_dive, "w").close()
+                    ev["blackout_dive"], ev["t_dive_cmd"] = True, now
+                    log("lenh cam xuong %.0f do dung luc mat hinh" % a.dive_deg)
+                if a.blackout_brake is not None:    # muc tieu ham (target_softbrake.py thay stop-file, TARGET_DECEL = DECEL)
+                    open(f_stop, "w").close()
+                    ev["blackout_brake"], ev["t_brake_cmd"] = a.blackout_brake, now
+                    log("muc tieu bat dau ham %.1f m/s^2 dung luc mat hinh" % a.blackout_brake)
+            if blackout_on is not None and blackout_over(now, blackout_on, a.blackout_s) and os.path.exists(f_black):
                 os.remove(f_black)
                 ev["blackout_end"] = now
                 log("mat hinh ket thuc")
-            if a.scenario == "disengage" and t_event is None and now - t_ws >= a.event_at:
+            if a.scenario == "disengage" and t_event is None and event_due(now, t_ws, a.event_at):
                 t_event = now
                 ch.cmd(176, 1, LOITER)
                 ev["t_disengage_cmd"] = time.monotonic()
                 log("da gui doi mode LOITER (disengage)")
             if a.scenario == "disengage" and t_event is not None and now - t_event >= 10.0:
                 break
-            if a.scenario != "disengage" and now - t_ws >= a.window + 5.0:
-                if a.dive_deg <= 0:
+            if a.scenario != "disengage" and run_ended(now, t_ws, a.window, post_s, ev.get("blackout_end")):
+                if a.dive_deg <= 0 or a.blackout_dive:
                     break
                 if t_dive is None:          # ca cam xuong: ra lenh cam, giu dive_hold s roi moi dung
                     t_dive = now

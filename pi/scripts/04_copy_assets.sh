@@ -1,5 +1,6 @@
 #!/bin/bash
-K=$HOME/.ssh/id_pi_lab; PI=dctien812@192.168.1.91
+. "$(dirname "$0")/../pi.env" 2>/dev/null || { echo "Loi: thieu pi/pi.env (sao chep tu pi/pi.env.example roi dien PI_USER, PI_HOST)" >&2; exit 1; }
+K=$HOME/.ssh/id_pi_lab; PI="$PI_USER@$PI_HOST"
 ssh -i $K -o IdentitiesOnly=yes $PI "mkdir -p ~/dtrack/videos ~/dtrack/models ~/dtrack/results"
 W=/mnt/d/Personal/Drone-Tracking/vision/weights/ft_v8n_best.pt
 V=/mnt/d/Personal/DHTT-TRACKING-TEST/AI-6/video

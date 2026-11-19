@@ -1,6 +1,6 @@
 # Pi 5 - buoc S3 (do toc do nhan dien tren CPU)
 
-Ket noi (tu WSL Ubuntu-24.04): `ssh -i ~/.ssh/id_pi_lab -o IdentitiesOnly=yes dctien812@192.168.1.91`
+Ket noi (tu WSL Ubuntu-24.04): `ssh -i ~/.ssh/id_pi_lab -o IdentitiesOnly=yes <PI_USER>@<PI_HOST>`
 Chay script tren Pi: `wsl -d Ubuntu-24.04 -- bash /mnt/d/Personal/Drone-Tracking/pi/scripts/pi_run.sh <script.sh>`
 
 Thu tu: 01_install_apt.sh (can sudo co mat khau: KHONG chay duoc, khong can vi libgl1/python3-dev da co san),

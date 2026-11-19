@@ -1,0 +1,7 @@
+{
+ "set": "test_pos",
+ "n_images": 10103,
+ "n_det_rows": 60354,
+ "seconds": 320.7,
+ "imgs_per_s": 31.51
+}

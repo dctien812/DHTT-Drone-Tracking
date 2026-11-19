@@ -1,0 +1,55 @@
+{
+  "guidance": {
+    "range_set_m": 15.0,
+    "range_back_m": 10.0,
+    "range_min_m": 8.0,
+    "elev_ramp_enabled": true,
+    "target_elev_ref_deg": -12.0,
+    "blind_floor_m": 0.0,
+    "blind_v_cap_mps": 0.0
+  },
+  "target_shape": {
+    "span_m": 2.16,
+    "length_m": 1.5,
+    "height_m": 0.65
+  },
+  "acceptance": {
+    "hard_floor_m": 6.0,
+    "dive_range_min_m": 6.0
+  },
+  "gimbal": {
+    "enabled": true
+  },
+  "camera": {
+    "fx": 933.0,
+    "fy": 933.0,
+    "width": 2304,
+    "height": 1296
+  },
+  "search": {
+    "enabled": true
+  },
+  "synthetic": {
+    "realdet_enabled": true,
+    "p_detect_px": [
+      [
+        6,
+        0.05
+      ],
+      [
+        12,
+        0.3
+      ],
+      [
+        20,
+        0.7
+      ],
+      [
+        40,
+        0.95
+      ]
+    ],
+    "burst_start_p": 0.01,
+    "burst_len_mean_frames": 15
+  }
+}

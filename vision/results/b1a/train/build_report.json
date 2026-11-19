@@ -1,0 +1,128 @@
+{
+ "manifest_sha_before": "7c67757cee4d2c3a81d3f87bc9d5519e5765c95f35e976a2178d48b07859e848",
+ "val_sparse_n": 3,
+ "folds": {
+  "EE": {
+   "frames": {
+    "train": 1153,
+    "val": 428,
+    "test": 10103
+   },
+   "crops": {
+    "train": {
+     "pos": 1153,
+     "bg": 1153,
+     "bg_none": 0,
+     "birds": 708,
+     "total_images": 3014
+    },
+    "val": {
+     "pos": 428,
+     "bg": 428,
+     "bg_none": 0,
+     "birds": 0,
+     "total_images": 856
+    }
+   },
+   "disk": {
+    "train": {
+     "images": 3014,
+     "labels": 3014,
+     "distinct_frames": 1153,
+     "frames_in_test": 0,
+     "frames_in_frozen_manifest": 0
+    },
+    "val": {
+     "images": 856,
+     "labels": 856,
+     "distinct_frames": 428,
+     "frames_in_test": 0,
+     "frames_in_frozen_manifest": 0
+    }
+   },
+   "yaml": "D:\\Personal\\Drone-Tracking\\vision\\data\\b1a\\sets\\EE\\data.yaml"
+  },
+  "DD": {
+   "frames": {
+    "train": 1375,
+    "val": 506,
+    "test": 8552
+   },
+   "crops": {
+    "train": {
+     "pos": 1375,
+     "bg": 1375,
+     "bg_none": 0,
+     "birds": 708,
+     "total_images": 3458
+    },
+    "val": {
+     "pos": 506,
+     "bg": 506,
+     "bg_none": 0,
+     "birds": 0,
+     "total_images": 1012
+    }
+   },
+   "disk": {
+    "train": {
+     "images": 3458,
+     "labels": 3458,
+     "distinct_frames": 1375,
+     "frames_in_test": 0,
+     "frames_in_frozen_manifest": 1375
+    },
+    "val": {
+     "images": 1012,
+     "labels": 1012,
+     "distinct_frames": 506,
+     "frames_in_test": 0,
+     "frames_in_frozen_manifest": 506
+    }
+   },
+   "yaml": "D:\\Personal\\Drone-Tracking\\vision\\data\\b1a\\sets\\DD\\data.yaml"
+  },
+  "final": {
+   "frames": {
+    "train": 2528,
+    "val": 934,
+    "test": 0
+   },
+   "crops": {
+    "train": {
+     "pos": 2528,
+     "bg": 2528,
+     "bg_none": 0,
+     "birds": 708,
+     "total_images": 5764
+    },
+    "val": {
+     "pos": 934,
+     "bg": 934,
+     "bg_none": 0,
+     "birds": 0,
+     "total_images": 1868
+    }
+   },
+   "disk": {
+    "train": {
+     "images": 5764,
+     "labels": 5764,
+     "distinct_frames": 2528,
+     "frames_in_test": 0,
+     "frames_in_frozen_manifest": null
+    },
+    "val": {
+     "images": 1868,
+     "labels": 1868,
+     "distinct_frames": 934,
+     "frames_in_test": 0,
+     "frames_in_frozen_manifest": null
+    }
+   },
+   "yaml": "D:\\Personal\\Drone-Tracking\\vision\\data\\b1a\\sets\\final\\data.yaml"
+  }
+ },
+ "manifest_sha_after": "7c67757cee4d2c3a81d3f87bc9d5519e5765c95f35e976a2178d48b07859e848",
+ "all_checks_ok": true
+}

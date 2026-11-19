@@ -25,7 +25,8 @@ DetectionSource.poll() -> [Detection]
 | `dtrack/guidance.py` | luật dẫn đường thuần: `compute_guidance(track, own, cfg, prev, prev_accel)`; lớp `Guidance` giữ trạng thái |
 | `dtrack/supervisor.py` | máy trạng thái IDLE/SEARCH/TRACK/COAST/LOST/ABORT, engage, watchdog |
 | `dtrack/mavlink_io.py` | pymavlink: kết nối, yêu cầu luồng, dựng `OwnState`, gửi lệnh vận tốc+yaw, đổi mode RTL, ánh xạ đồng hồ FC |
-| `dtrack/logger.py` | log CSV không chặn |
+| `dtrack/search.py` | khối tìm lại mục tiêu sau khi mất hình (giai đoạn 2): `SearchEpisode` (đồng hồ đợt, pha), `SearchPlanner` (quét khớp và yaw); supervisor gọi. Mặc định TẮT |
+| `dtrack/logger.py` | log CSV không chặn (khối tìm lại ghi thêm `search.csv` qua `SearchLogger`) |
 | `dtrack/app.py` | vòng lặp chính (mặc định 30 Hz), `DetectionSource`, `CameraHailoSource` (giữ chỗ) |
 | `simtools/` | CHỈ mô phỏng: `sim_truth_source.py`, `sim_helper.py`, `run_closed_loop.sh`, `analyze_closed_loop.py` |
 
@@ -41,6 +42,7 @@ DetectionSource.poll() -> [Detection]
 - Chỉ gửi lệnh khi FC đã arm, mode GUIDED và có tín hiệu engage (bay thật: kênh RC `engage_rc_channel` > `engage_rc_threshold_us`; SITL: `--auto-engage`, bị từ chối nếu nguồn không phải `sim`). Mất một trong ba → IDLE, ngừng gửi ngay. Không bao giờ arm / cất cánh / đổi sang GUIDED.
 - Watchdog → ABORT (phanh nếu còn link): vòng lặp chậm > `loop_slow_s`, mất HEARTBEAT > `heartbeat_timeout_s`, tuổi dữ liệu tư thế > `pose_timeout_s`; lý do ghi vào log và `abort_reasons`.
 - COAST tối đa `coast_follow_s` tính từ lúc vào COAST, kể cả khi tracker đã báo LOST/SEARCH (nó reset sau 3 s): vẫn bay tiếp như trên; hết hạn mới LOST (phanh, giữ vị trí); không có mục tiêu quá `lost_rtl_s` → yêu cầu RTL một lần (`rtl_on_lost`).
+- Khối tìm lại (`search.enabled`, mặc định `False` = không có đợt tìm, RTL sau `lost_rtl_s` như cũ; lệnh COAST và bộ bám đã đổi theo C1/C2 nên không hoàn toàn giống giai đoạn 1; cần `gimbal.enabled`, không dùng cùng `camera.gimbal_enabled`): đợt `search.total_s` = 20 s tính từ COAST đầu. Pha 0 bay theo dự đoán tối đa `coast_follow_s` = 4 s; pha 1 treo (≤ 0,3 m/s), khớp quét `scan_rate_dps` = 60°/s trong `scan_lo_deg`–`scan_hi_deg` (10°–110°), yaw quét ±`yaw_amp_deg` = 45° ở `yaw_rate_dps` = 20°/s; khi tracker báo TRACK trong pha ≥ 1 thì khớp ngừng quét và bám, drone vẫn treo; pha 2 leo `climb_m` (mặc định 0 = tắt) từ `climb_start_s` = 10 s, tốc độ `climb_rate_mps` 2 m/s; hết `total_s` thì RTL một lần. Tìm lại = TRACK liên tục ≥ `reacquire_hold_s` = 1,0 s, lúc đó đợt đóng. Bật bằng hồ sơ `search_plane_r15` (`config.PROFILES`; file tương đương `simtools/configs/search_plane_r15.json`). Hồ sơ đặt `blind_floor_m` = 0 và `blind_v_cap_mps` = 0 nên cơ chế "giả định mục tiêu hãm" khi bay mù (còn trong mã, có test) TẮT theo quyết định của chủ dự án. Thiết kế: `.office/design-search.md` (S-1…S-15 ở cuối file thắng phần trên). Rủi ro đã biết xem mục cuối file này.
 - Khi app kết thúc (SIGINT/SIGTERM/`--stop-file`) mà FC vẫn ở GUIDED: phanh tường minh (v = 0, giữ yaw) tới khi đứng yên hoặc `brake_on_exit_s`, rồi thoát 0.
 
 ## Hằng số MAVLink đã xác minh (ArduPilot 4.7.2, `~/ardupilot`)
@@ -54,12 +56,16 @@ Thử đơn vị (không cần SITL), trong WSL:
     cd /mnt/d/Personal/Drone-Tracking/onboard
     ~/venv-ardupilot/bin/python -m pytest -q
 
-Vòng kín SITL (mỗi lần ~5 phút thật; không gọi `sim/run_chase.sh`):
+Vòng kín SITL (mỗi lần ~2,5–4,5 phút thật; không gọi `sim/run_chase.sh`):
 
     wsl -d Ubuntu-24.04 -- bash -lc 'cd /mnt/d/Personal/Drone-Tracking/onboard/simtools && SEED=1 SCENARIO=none bash run_closed_loop.sh 10'
 
 Biến môi trường: `SEED` (seed bộ phát hiện tổng hợp), `SCENARIO` = `none` | `blackout` (tắt nguồn phát hiện 3 s tại t_ws+40 s) | `disengage` (đổi mode LOITER tại t_ws+40 s), `SPEEDUP`, `RANGE`, `CONFIG`, `MAX_WALL`.
 Thêm cho đo so sánh camera (B4): `STRAIGHT=1` (mục tiêu bay thẳng, tăng tốc đầu + phanh cuối), `RANGE` (khoảng cách giữ, truyền cho cả app), `CAM_FX` (tiêu cự px), `CAM_TILT` (độ), `GIMBAL=1` (khớp gật một trục ổn định pitch: `camera.gimbal_enabled`, `gimbal_travel_deg` ±50, `gimbal_rate_dps` 300, `gimbal_lag_s` 0.05; mô hình ở `simtools/gimbal_model.py`, tracker nhận quaternion thân hiệu dụng `q_eff`, guidance vẫn dùng tư thế thân và tự đặt `elev_accel_comp = 0` để không bù hai lần). Các biến này ghi `app_cfg.json` vào thư mục kết quả; analyzer đọc lại để in các dòng `B4 ...` (pha, ra khỏi khung, góc trục đẩy–hướng nhìn, hành trình khớp, kích thước mục tiêu, sai số khoảng cách). Mặc định camera cố định như cũ.
+Ca tìm lại (chỉ đi với `SCENARIO=blackout`; đặt bất kỳ biến nào dưới đây thì cửa sổ chấm = `EVENT_AT`): `EVENT_AT` (giây kể từ `t_ws`, lúc bắt đầu cửa sổ đo khi khoảng cách đạt mức đặt; mặc định 40; lô `srchG3` đặt 30 cho ca bổ nhào), `BLACKOUT_S` (độ dài mất hình, mặc định 3), `POST_S` (giây quan sát sau khi hết mất hình, mặc định 15), `DIVE_DEG>0` (cắm xuống đúng lúc mất hình), `BLACKOUT_BRAKE` (m/s², mục tiêu hãm đúng lúc mất hình; không đi với `DIVE_DEG`), `BLIND_D3_MIN` (ngưỡng d3 lúc mù, mặc định 8 m), `MEASURE_ONLY=1` (tiêu chí khoảng cách chỉ in để đo), `DRY_RUN=1` (chỉ in dòng lệnh helper và bộ chấm rồi thoát 0, không khởi động gì). `PROFILE=<tên hồ sơ trong config.PROFILES>` thay cho `CONFIG` (đặt `PROFILE` thì `CONFIG` bị bỏ qua). Ví dụ (đã kiểm bằng `DRY_RUN=1`, chưa chạy thật):
+
+    PROFILE=search_plane_r15 SEED=1 SCENARIO=blackout BLACKOUT_S=8 bash run_closed_loop.sh 10
+
 Kết quả ở `onboard/simtools/out/<giờ>_<tốc độ>ms_s<seed>_<kịch bản>/`: `truth.csv` (vị trí THẬT của hai máy từ `SIM_STATE`, 50 Hz), `app_log.csv`, `events.json`, `result.txt`, log các tiến trình.
 Cổng SITL: target `5760` (target.py) / `5762` (SimTruthSource) / `5763` (sim_helper); chaser `5770` (app) / `5772` (sim_helper) / `5773` (SimTruthSource).
 Chấm điểm (`analyze_closed_loop.py`) chỉ dùng vị trí thật: sai số TB < 3 m trong cửa sổ 120 s, min khoảng cách thật ≥ 8 m trên TOÀN chuyến bay (cất cánh → cả hai dừng), TRACK ≥ 90%, khoảng trống dữ liệu ≤ 0.2 s CHỈ trong cửa sổ đo (khoảng trống toàn chuyến chỉ in tham khảo), ≥ 10 Hz, app thoát 0.
@@ -93,6 +99,13 @@ Phép đổi lat/lon → mét dùng trắc địa WGS84 theo vĩ độ (`mavlink
 | `supervisor.engage_rc_channel`, `engage_rc_threshold_us` | 8, 1700 | tín hiệu engage khi bay thật |
 | `mavlink.resend_hz` | ≥ 10 | tần số gửi lại lệnh tối thiểu |
 | `loop_hz` | 30 | tần số vòng lặp |
+
+## Rủi ro đã biết của khối tìm lại (lô SITL `srchG3`, 26 lần, 2026-11-19; toàn bộ là mô phỏng)
+Kết quả: tìm lại bay thẳng 5/5 seed sau 7,97–8,13 s (4 seed `srchG3` + seed 1 lô bù `srchG4`); bổ nhào 25° 5/5 sau 10,97–11,07 s; mất hình 25 s → RTL ở 20,03 s; d3 nhỏ nhất trong cửa sổ mất hình khi mục tiêu bay đều 15,13–15,89 m (yêu cầu 8 m). Rủi ro:
+- (a) Cuối bài, khi mục tiêu dừng, drone vào đợt COAST thứ hai và áp sát 3,89–7,87 m ở 8/13 lần (mẫu số = tất cả lần bay thẳng có mục tiêu dừng cuối bài, không tính ca mất hình 25 s và ca hãm 3 / 8 m/s²: `srchG3` lần 1–5, 15, 23–26 và `srchG4` lần 2, 7, 8; 8 lần dưới 8 m là `srchG3` lần 1–5, 24, 26 và `srchG4` lần 2: 5,21 m ngoài cửa sổ mất hình, trong cửa sổ 15,72 m, drone cao hơn mục tiêu 4,00 m, góc nâng 50,1°), kể cả khi tắt tìm lại; lúc gần nhất drone ở trên mục tiêu 3,3–4,2 m, góc nâng 27–75° ("gần như trên đầu" chỉ hợp 3 lần trên 65°); bám bình thường khoảng 11–13° ở ba lần được tính lại (báo cáo đo ghi 11–19° cho lần 6–11, 13–19). Cùng lúc đó mục tiêu ra khỏi khung 1,56–3,88 s, khoảng cách lớn nhất tới 57 m. Chưa sửa.
+- (b) Mục tiêu hãm 1,5 / 3 / 8 m/s² lúc mù (chỉ đo): gần nhất cả chuyến 4,23 / 3,24 / 3,38 m; ca 1,5 m/s² tìm lại ở 17,90 s; ca 3 và 8 m/s² không tìm lại, RTL ở 20 s.
+- (c) Ca bổ nhào: bật tìm lại lấy lại hình chậm hơn tắt ≈ 3 s (≈ 11,0 s so với ≈ 8,0 s). Nguyên nhân: pha 1 quét gimbal cả dải 10°–110° (chu kỳ 3,33 s), mục tiêu bổ nhào (≈ −42° lúc 8 s) chỉ lọt khung khi gimbal ≳ 97–100° (0,2–0,3 s mỗi chu kỳ), và lượt quét qua vùng đó kết thúc đúng lúc hết mất hình ở cả 5 seed. Độ trễ thật 0–3,3 s tùy pha, chưa đo. Chưa sửa; hướng dự kiến: quét quanh góc dự đoán (≈ ±25°) hoặc nâng `scan_lo_deg`.
+- (d) Sau lô bù `srchG4`: C8 mới 1 lần leo thật, đạt (leo 5,20 m từ độ cao thấp nhất trong cửa sổ mất hình, 4,86 m từ lúc bắt đầu mất hình; mất hình 14 s, `configs/search_plane_r15_climb10.json`; d3 nhỏ nhất 15,59 m trong cửa sổ, 15,31 m cả chuyến; sau khi đóng đợt độ cao còn lên tới +9,15 m, vẫn trong mức 11 m, nguyên nhân chưa điều tra), chưa đủ so với kế hoạch (10 m × 3 seed, 20 m × 1 seed); C5 đạt 5/5 seed nhưng cả 5 lần đều bắt lại đúng lúc hình trở lại, chưa chứng minh quét tự tìm ra mục tiêu; C9 đạt, ba ô bám (lần 13–15 `srchG3`, thêm seed 2 và 3 ở `srchG4`) d3 nhỏ nhất 11,10–13,12 m ở các lần bù, ra khung 0 s; C2 chưa chứng minh trực tiếp. (e) Bộ bám mất thời gian TRACK khi có vật gây nhiễu độ tin cậy cao ở mọi khung: 20–29 điểm phần trăm (07) hoặc khoảng 42–46 điểm (08). (f) Nhiễu đo gấp đôi: 2 lần khoảng cách ≈ 50 m ở đoạn giảm tốc cuối, chưa rõ nguyên nhân. (g) Chưa bay thật, chưa chạy trên Pi.
 
 ## Hạn chế và điều CHƯA có
 - **Camera thật + Hailo chưa có**: `CameraHailoSource` ném `NotImplementedError`. Mọi số đo vòng kín dùng phát hiện TỔNG HỢP từ vị trí thật của mục tiêu (nhiễu tâm 1.5 px, kích thước 1 px, bỏ sót 20%, giả 5%, trễ 60 ms, cắt mép), nên chưa phản ánh detector thật.

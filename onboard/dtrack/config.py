@@ -10,6 +10,7 @@ import math
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any, Dict, Optional
 
+from .synthetic import SyntheticConfig
 from .types import CameraModel
 
 
@@ -53,6 +54,13 @@ class GuidanceConfig:
     blind_grace_s: float = 1.0         # s, sau chung nay ke tu lan TRACK hop le cuoi moi bat dau giam toc do bay tiep
     blind_decel_mps2: float = 1.0      # m/s^2, toc do ngang bay tiep giam dan (phong muc tieu dung/phanh luc mat hinh)
     blind_mem_max_s: float = 8.0       # s, bo nho muc tieu cu hon chung nay thi bo (khong dung de bay tiep)
+    # --- an toan luc mu (design-search.md muc (e), S-10, S-13); mac dinh = hanh vi cu ---
+    blind_floor_m: float = 0.0         # m, san khoang cach luc mu (lui khan khi r_hat < san + bien + quang dung); 0 = tat
+    blind_back_margin_m: float = 2.0   # m, bien cong them tren san de bat dau lui/phanh
+    blind_target_decel_mps2: float = 3.0   # m/s^2, mo hinh muc tieu ham ngay luc mat hinh (dung cho r_hat)
+    blind_v_cap_mps: float = 0.0       # m/s, tran toc do ngang luc mu; 0 = khong gioi han
+    blind_grace_model_s: float = 1.5   # s, trong chung nay ke tu luc mat chi dung mo hinh giu nguyen van toc cho r_hat; 0 = luon lay min hai mo hinh
+    blind_react_s: float = 1.0        # s, tre phan ung cua FC dung trong quang dung d_dung = v_tien*react + v_tien^2/(2*a_back)
     dt_default_s: float = 1.0 / 30     # s, dt khi chua co lenh truoc
     dt_max_s: float = 0.2              # s, dt toi da dung de gioi han (lenh truoc cu hon -> coi nhu 0.2 s)
     yaw_lead_s: float = 0.5            # s, yaw lenh = huong ngam + toc do quay ngang cua duong ngam * yaw_lead_s (bu tre FC)
@@ -127,6 +135,24 @@ class GimbalConfig:
 
 
 @dataclass
+class SearchConfig:
+    """Khoi tim lai muc tieu khi mat (design-search.md muc (b), S-9). Mac dinh TAT = hanh vi cu (RTL o lost_rtl_s).
+    Cac rang buoc chi duoc kiem khi enabled=True (va bat buoc gimbal.enabled)."""
+    enabled: bool = False
+    total_s: float = 20.0              # s, tim toi da tinh tu COAST dau cua dot mat; het han -> yeu cau RTL mot lan
+    reacquire_hold_s: float = 1.0      # s, TRACK lien tuc toi thieu de coi la bat lai (dong dot)
+    climb_m: float = 0.0               # m, do cao leo them o pha 2 (0 = khong co pha 2)
+    climb_start_s: float = 10.0        # s, pha 2 bat dau o ep_s nay (neu climb_m > 0)
+    climb_rate_mps: float = 2.0        # m/s, toc do leo toi da o pha 2
+    scan_rate_dps: float = 60.0        # do/s, toc do quet khop
+    scan_lo_deg: float = 10.0          # do, bien duoi dai quet khop
+    scan_hi_deg: float = 110.0         # do, bien tren dai quet khop
+    climb_scan_lo_deg: float = 70.0    # do, bien duoi dai quet o pha 2 (dai thap)
+    yaw_amp_deg: float = 45.0          # do, bien do quet yaw quanh yaw luc bat dau pha 1 (0 = khong quet yaw)
+    yaw_rate_dps: float = 20.0         # do/s, toc do quet yaw
+
+
+@dataclass
 class TargetShapeConfig:
     """Hop bao ba canh cua muc tieu that (mac dinh khoi 0.30 m = hanh vi cu). Bo uoc luong khoang cach dung span_m."""
     span_m: float = 0.30      # m, ngang vuong goc mui (sai canh)
@@ -155,6 +181,8 @@ class AppConfig:
     gimbal: GimbalConfig = field(default_factory=GimbalConfig)
     target_shape: TargetShapeConfig = field(default_factory=TargetShapeConfig)
     acceptance: AcceptanceConfig = field(default_factory=AcceptanceConfig)
+    synthetic: SyntheticConfig = field(default_factory=SyntheticConfig)
+    search: SearchConfig = field(default_factory=SearchConfig)
 
     def __post_init__(self) -> None:
         if self.gimbal.enabled:
@@ -190,6 +218,18 @@ def validate(cfg: AppConfig) -> None:
         v = getattr(g, name)
         if not (math.isfinite(v) and v > 0):
             raise ValueError("%s phai > 0" % name)
+    for name, lo, hi in (("blind_floor_m", 0.0, math.inf), ("blind_back_margin_m", 0.0, math.inf),
+                         ("blind_v_cap_mps", 0.0, g.v_max_mps), ("blind_react_s", 0.0, 5.0),
+                         ("blind_grace_model_s", 0.0, 3.0)):
+        v = getattr(g, name)
+        if not (math.isfinite(v) and lo <= v <= hi):
+            raise ValueError("guidance.%s phai trong [%g, %g]" % (name, lo, hi))
+    if not (math.isfinite(g.blind_target_decel_mps2) and g.blind_target_decel_mps2 > 0):
+        raise ValueError("guidance.blind_target_decel_mps2 phai > 0")
+    if g.blind_floor_m >= g.range_set_m:
+        raise ValueError("guidance.blind_floor_m phai < range_set_m")
+    if g.blind_back_margin_m > g.range_set_m:
+        raise ValueError("guidance.blind_back_margin_m phai <= range_set_m")
     for name in ("span_m", "length_m", "height_m"):
         v = getattr(cfg.target_shape, name)
         if not (math.isfinite(v) and v > 0):
@@ -224,6 +264,53 @@ def validate(cfg: AppConfig) -> None:
         raise ValueError("gimbal.slow_factor phai > 0")
     if g.elev_ramp_enabled and not (math.isfinite(g.elev_ramp_dps) and g.elev_ramp_dps > 0):
         raise ValueError("guidance.elev_ramp_dps phai > 0 khi bat")
+    # --- khoi tim lai muc tieu ---
+    sr = cfg.search
+    if sr.enabled:
+        if not gm.enabled:
+            raise ValueError("search.enabled can gimbal.enabled")
+        cf = s.coast_follow_s
+        if g.blind_mem_max_s < cf:
+            raise ValueError("search.enabled can guidance.blind_mem_max_s >= supervisor.coast_follow_s")
+        if not (math.isfinite(sr.total_s) and cf < sr.total_s <= 300.0):
+            raise ValueError("search.total_s phai trong (supervisor.coast_follow_s, 300]")
+        if not (0.2 <= sr.reacquire_hold_s <= 10.0):
+            raise ValueError("search.reacquire_hold_s phai trong [0.2, 10]")
+        if not (math.isfinite(sr.climb_m) and sr.climb_m >= 0.0):
+            raise ValueError("search.climb_m phai huu han, >= 0")
+        if not (cf < sr.climb_start_s < sr.total_s):
+            raise ValueError("search.climb_start_s phai trong (supervisor.coast_follow_s, search.total_s)")
+        if not (0.0 < sr.climb_rate_mps <= g.climb_max_mps):
+            raise ValueError("search.climb_rate_mps phai trong (0, guidance.climb_max_mps]")
+        if not (0.0 < sr.scan_rate_dps <= 0.5 * gm.rate_dps / gm.slow_factor):
+            raise ValueError("search.scan_rate_dps phai trong (0, 0.5*gimbal.rate_dps/slow_factor]")
+        if not (gm.delta_min_deg <= sr.scan_lo_deg and sr.scan_hi_deg <= gm.delta_max_deg
+                and sr.scan_hi_deg - sr.scan_lo_deg >= 20.0):
+            raise ValueError("search.scan_lo_deg/scan_hi_deg phai nam trong dai khop va cach nhau >= 20 do")
+        if not (sr.scan_lo_deg <= sr.climb_scan_lo_deg < sr.scan_hi_deg):
+            raise ValueError("search.climb_scan_lo_deg phai trong [scan_lo_deg, scan_hi_deg)")
+        if not (0.0 <= sr.yaw_amp_deg <= 90.0):
+            raise ValueError("search.yaw_amp_deg phai trong [0, 90]")
+        if not (0.0 < sr.yaw_rate_dps <= g.yaw_rate_max_dps):
+            raise ValueError("search.yaw_rate_dps phai trong (0, guidance.yaw_rate_max_dps]")
+    # --- nguon phat hien mo phong 'realdet' ---
+    sy = cfg.synthetic
+    if not (0.0 <= sy.burst_start_p <= 1.0):           # NaN cung bi tu choi (so sanh sai)
+        raise ValueError("synthetic.burst_start_p phai trong [0, 1]")
+    if not (math.isfinite(sy.burst_len_mean_frames) and sy.burst_len_mean_frames > 0):
+        raise ValueError("synthetic.burst_len_mean_frames phai > 0")
+    if sy.realdet_enabled and len(sy.p_detect_px) == 0:
+        raise ValueError("synthetic.p_detect_px khong duoc rong khi realdet_enabled")
+    prev = None
+    for row in sy.p_detect_px:
+        if len(row) != 2:
+            raise ValueError("synthetic.p_detect_px: moi dong la cap (px, p)")
+        px, p = float(row[0]), float(row[1])
+        if not math.isfinite(px) or not (0.0 <= p <= 1.0):
+            raise ValueError("synthetic.p_detect_px: px huu han, p trong [0, 1]")
+        if prev is not None and (px <= prev[0] or p < prev[1]):
+            raise ValueError("synthetic.p_detect_px: px phai tang chat, p khong duoc giam theo co")
+        prev = (px, p)
 
 
 def _fill(obj: Any, data: Dict[str, Any], path: str) -> None:
@@ -238,7 +325,8 @@ def _fill(obj: Any, data: Dict[str, Any], path: str) -> None:
             _fill(cur, v, path + "." + k)
         else:
             if isinstance(cur, bool):
-                v = bool(v)
+                if not isinstance(v, bool):
+                    raise ValueError("%s.%s phai la true/false that, khong phai %r" % (path, k, v))
             elif isinstance(cur, int):
                 v = int(v)
             elif isinstance(cur, float):
@@ -264,6 +352,27 @@ PROFILES: Dict[str, Dict[str, Any]] = {
 PROFILES["accept_plane_r15"] = json.loads(json.dumps(PROFILES["accept_plane_r25"]))
 PROFILES["accept_plane_r15"]["guidance"].update({"range_set_m": 15.0, "range_back_m": 10.0, "range_min_m": 8.0})
 PROFILES["accept_plane_r15"]["acceptance"] = {"hard_floor_m": 6.0, "dive_range_min_m": 6.0}
+# nguon phat hien mo phong 'realdet': accept_plane_r15 + camera Wide tuong minh + p_detect theo co px va mat theo cum.
+# Cac so trong "synthetic" la GIA DINH (chua co duong recall that), de tao doan COAST that trong mo phong.
+PROFILES["realdet"] = json.loads(json.dumps(PROFILES["accept_plane_r15"]))
+PROFILES["realdet"]["camera"].update({"fx": 933.0, "fy": 933.0, "width": 2304, "height": 1296})
+PROFILES["realdet"]["synthetic"] = {
+    "realdet_enabled": True,
+    "p_detect_px": [[6.0, 0.05], [12.0, 0.30], [20.0, 0.70], [40.0, 0.95]],
+    "burst_start_p": 0.01,
+    "burst_len_mean_frames": 15.0,
+}
+# tim lai muc tieu (design-search.md S-5): giu 15 m, khop kieu MOI gimbal.enabled (khong camera.gimbal_enabled), camera Wide
+# tuong minh; dung tu simtools/configs/plane_r15_gimbal_e12_wide.json (them elev_ramp + goc nang -12) + search + san luc mu.
+PROFILES["search_plane_r15"] = {
+    "guidance": {"range_set_m": 15.0, "range_back_m": 10.0, "range_min_m": 8.0, "elev_ramp_enabled": True,
+                 "target_elev_ref_deg": -12.0, "blind_floor_m": 0.0, "blind_v_cap_mps": 0.0},
+    "target_shape": {"span_m": 2.16, "length_m": 1.5, "height_m": 0.65},
+    "acceptance": {"hard_floor_m": 6.0, "dive_range_min_m": 6.0},
+    "gimbal": {"enabled": True},
+    "camera": {"fx": 933.0, "fy": 933.0, "width": 2304, "height": 1296},
+    "search": {"enabled": True},
+}
 
 
 def profile_dict(name: str) -> Dict[str, Any]:

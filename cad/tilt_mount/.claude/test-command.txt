@@ -1,0 +1,1 @@
+wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/d/Personal/Drone-Tracking/cad/tilt_mount && ~/venv-cad/bin/python -m pytest -q -x"
