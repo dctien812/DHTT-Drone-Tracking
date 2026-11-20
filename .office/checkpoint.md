@@ -1,53 +1,57 @@
-# Checkpoint: cuối phiên 6 — giai đoạn 2 và việc B1a đã xong phần làm (2026-11-19, khoảng 20:00)
+# Checkpoint: tổng kết giai đoạn, dừng chờ phần cứng (2026-11-20, khoảng 11:40)
 
-Tên dự án: Drone Tracking. Phiên sau đọc: file này, rồi cuối `.office\ledger.md` (mục "Phiên 6"). Kế hoạch đã chạy hết: `.office\plan-phase2.md` (21 bước) và `.office\plan-b1a.md` (15 bước, một vòng huấn luyện). Người dùng nghỉ tới đầu tuần; hạn mức tuần của Fable đặt lại trưa Chủ nhật, có thể trưởng phòng chạy bằng Opus 5.5.
+Tên dự án: Drone Tracking. Lý do ghi: người dùng yêu cầu tổng kết; phần mô phỏng DỪNG tới khi đủ phần cứng (nguồn Pi chưa về). Không phải tổng kết do hạn mức, nên không có giờ đặt lại.
+Phiên sau đọc: file này, rồi cuối `.office\ledger.md` (mục "Phiên 7"). Kế hoạch đã chạy hết và đã được chấp nhận: `.office\plan-phase2.md`, `.office\plan-b1a.md`, `.office\plan-phase2b.md`. Thiết kế khối tìm lại: `.office\design-search.md` (S-1…S-16; mục sau thắng mục trước).
 
 ## Lưu ý vận hành
-- Đồng hồ WSL chậm 7 giờ so với giờ máy. Git chỉ chạy qua Git Bash. pytest chạy trong WSL: `~/venv-ardupilot/bin/python` cho `onboard`, `~/venv-vision/bin/python` cho `vision\tests_b1`.
-- Mỗi lúc chỉ một SITL; khi SITL chạy không làm việc nặng ổ D, không huấn luyện, không chơi game trên máy (card dùng chung làm chậm và làm hỏng số đo).
-- Bước bị bộ lọc an toàn dừng: báo người dùng trong chat kèm prompt để họ tự chạy ở phiên khác; không đưa vào báo cáo, không viết lại để né, không tự làm thay.
-- Repo GitHub công khai. Không đưa lên: ảnh, video của người dùng (`.office/images/`) và mọi thứ sinh ra từ đó (`vision/results/b1a/realvideo1/`), `pi/pi.env`, `vision/data/`, `vision/.venv-gpu/`, `onboard/simtools/out/`, ảnh chụp thử camera (`pi/camtest_*`). `.gitignore` đã có đủ; trước mỗi lần đẩy chạy `git add -A -n` và tìm tên đăng nhập, IP, đường dẫn hồ sơ Windows. Lịch sử cũ còn IP và ảnh camera thử: người dùng quyết không viết lại lịch sử.
+- Đồng hồ WSL chậm 7 giờ so với giờ máy. Luôn gọi `wsl -d Ubuntu-24.04` (distro mặc định là BambuStudio). pytest: `~/venv-ardupilot/bin/python` cho `onboard`, `~/venv-vision/bin/python` cho `vision\tests_b1`.
+- Git: commit bằng Git for Windows (Git Bash); fetch/push bằng git của WSL, lệnh trơn: `wsl -d Ubuntu-24.04 -- bash -lc "cd /mnt/d/Personal/Drone-Tracking && git push origin main"` (khóa `id_dtrack` chỉ có trong WSL; kèm tham số ghi đè khóa thì bị bộ kiểm quyền chặn).
+- Một SITL mỗi lúc; khi SITL hoặc huấn luyện chạy: không việc nặng ổ D, không chơi game trên máy.
+- Repo GitHub công khai. Không đưa lên: ảnh, video của người dùng (`.office/images/`) và thứ sinh ra từ đó (`vision/results/b1a/realvideo1/`), `pi/pi.env`, `vision/data/`, `vision/.venv-gpu/`, `onboard/simtools/out/`, `pi/camtest_*`. Trước mỗi lần đẩy: `git add -A -n` và tìm tên đăng nhập, IP, đường dẫn hồ sơ Windows. Không viết lại lịch sử git.
+- Bước bị bộ lọc an toàn dừng: báo người dùng trong chat kèm prompt; không đưa vào báo cáo, không viết lại để né, không tự làm thay.
+- Trước khi đề xuất việc gì: grep sổ ghi xem người dùng đã quyết chưa.
 
-## Cập nhật 2026-11-20: giai đoạn 2b (sửa rủi ro c bằng quy tắc S-16)
-Kế hoạch: `.office\plan-phase2b.md`. Phần dưới (giai đoạn 2, 2026-11-19) giữ làm lịch sử; chỗ nào mâu thuẫn thì mục này thắng.
-- Đã làm: quy tắc S-16, khóa `search.scan_start_s` = 12,0 s (trước mốc gimbal giữ hướng ngắm cuối, drone giữ hướng mũi; từ mốc quét như cũ); mã đã sửa và đã rà; ghi thiết kế ở `.office\design-search.md` mục S-16. Test `onboard`: 1412 passed, 1 xfailed (số cũ 1368 là trước S-16).
-- SITL lô `srchH1` (20 lần): bổ nhào 25°, mất hình 8 s, seed 1–5: bật trung bình 8,17 s, tắt 8,18 s, chênh −0,006 s (mức đặt ≤ +1,0 s; trước sửa bật ≈ 11,0–11,2 s, chậm hơn tắt ≈ 3 s). Mất hình 7 s: 7,17 / 7,22; 9 s: 9,19 / 9,20. Bay thẳng 8 s: 3/3 tìm lại (8,16 / 8,18 / 8,20 s). Mất hình 25 s: RTL ở 20,04 s. Mất hình 14 s: quét từ 12,03 s, bám lại 14,98 s (trễ 0,96 s). Leo 10 m, mất hình 14 s: 5,54 m (đồng hồ đợt; cùng cách đo lần trước: 10,67 s / 5,24 m / 13,97 s, nay 10,6 s / 5,54 m / 14,0 s). Bảng: `onboard\simtools\out\_report_srchH1\srchH1_table.md`.
-- Hạn chế: cả 14 lần bổ nhào ngắn hơn mốc 12 s nên khối quét không chạy lần nào; chỉ chứng minh bật không còn làm chậm, KHÔNG chứng minh quét có ích.
-- Rủi ro (a) đã điều tra nguyên nhân gốc, CHƯA sửa: mục tiêu mô phỏng hãm ≈ 7 m/s² (đỉnh) còn drone chỉ hãm 3,0 m/s² và trễ đáp ứng bộ điều khiển bay (0,12–0,16 s; hằng số thời gian 0,65–0,75 s) không có trong trần tiếp cận; lùi khẩn ngóc mũi 36–43°, gimbal kẹt 110°, mục tiêu ra đáy khung, đợt mất hình thứ hai, văng xa 36–57 m. Mẫu số nay 11/19 (tất cả lần bay thẳng có mục tiêu dừng cuối bài, trừ mất hình 25 s và hãm 3 / 8 m/s²: `srchG3` 10 lần/7, `srchG4` lần 1, 2, 7, 8: 4 lần/1, `srchH1` lần 15–17, 19, 20: 5 lần/3; cả 11 lần áp sát đều là ca mất hình 8 s; bản trước ghi 8/13 do chưa đếm ca mất hình 14 s). Cú dừng ≈ 7 m/s² là của mục tiêu mô phỏng; gia tốc hãm thực tế của mục tiêu chưa chốt, nên chưa quyết sửa kịch bản hay luật hãm. Script: `onboard\simtools\out\_report_srchG4\inv_endleg\`.
-- QUYẾT ĐỊNH CỦA NGƯỜI DÙNG (2026-11-20): DỪNG phần mô phỏng; chờ đủ phần cứng (nguồn Pi, linh kiện) rồi thử tiếp. KHÔNG sửa luật hãm của drone cho rủi ro (a): người dùng đã quyết từ 2026-11-19 rằng cho drone hãm mạnh khi mục tiêu phanh gấp làm hình chập chờn và drone tụt lại; giữ kịch bản mô phỏng như hiện có, ra thực tế có số đo mới điều chỉnh. ĐỪNG đề xuất lại việc này. Trạng thái: commit `bf76ee0` đã lên GitHub (push bằng git của WSL).
-- Việc để sau, CHỈ khi người dùng mở lại phần mô phỏng (không tự làm): (1) [đã gác theo quyết định trên] hướng sửa (a) bằng cự ly dự đoán chỉ để tham khảo; (2) chạy bù C8: leo 10 m thêm 2 seed, leo 20 m 1 seed (mất hình 14 s); (3) quyết định trần chênh cao khi bám xa; (4) tìm ca chứng minh quét có ích (mất hình dài hơn 12 s với mục tiêu hiện lại ở chỗ khác).
-- Chưa chạy thử: hệ quả nhỏ của S-16 (nếu mốc quét tới lúc đang leo mà góc giữ thấp hơn 70° thì lệnh gimbal nhảy một lần lên biên).
+## Quyết định còn hiệu lực của người dùng
+- Phần nhận diện giữ nguyên: model gốc yolov8n (lớp airplane) ngưỡng 0,12; huấn luyện tiếp chỉ khi có video/ảnh quay ở sân bay; mức đạt 60–70%.
+- KHÔNG sửa luật hãm của drone và không bật lại cơ chế "giả định mục tiêu hãm" (quyết 11-19: hãm mạnh làm hình chập chờn, drone tụt lại). Giữ kịch bản mô phỏng (mục tiêu dừng ~7 m/s²); ra thực tế có số đo mới điều chỉnh. ĐỪNG đề xuất lại.
+- Áp sát ~1 m không coi là rủi ro va chạm vì drone bay cao hơn mục tiêu.
+- Khối tìm lại mặc định TẮT; bật qua hồ sơ `search_plane_r15`.
+- Mật khẩu Pi không đổi. Ảnh mô phỏng trong repo giữ nguyên.
 
-## Giai đoạn 2 (tìm lại mục tiêu sau khi mất hình): xong 21 bước
-- Mã: `onboard\dtrack\search.py` và các phần nối; mặc định TẮT, bật qua hồ sơ `search_plane_r15`. Cơ chế "giả định mục tiêu hãm" tắt trong hồ sơ theo quyết định của người dùng.
-- Test `onboard`: `1368 passed, 1 xfailed` (08 chạy 2026-11-19).
-- SITL: lô `srchG3` (26 lần) và lô bù `srchG4` (8 lần). Bảng: `onboard\simtools\out\_report_srchG3\srchG3_table.md`, `out\_acceptance_srchG4_20261119_121709.txt`.
-- Tiêu chí: C1 đạt · C2 chưa đủ bằng chứng · C3 đạt · C4 đạt · C5 đạt (5/5 seed, nhưng chưa chứng minh việc quét tự tìm ra mục tiêu) · C6 đạt trong cửa sổ mất hình (≥ 15,1 m) · C7 đạt (RTL 20,00–20,03 s) · C8 mới 1 lần leo thật (5,20 m tới lúc tìm lại; sau khi tìm lại độ cao còn tăng tới +20,47 m, đỉnh 53,74 m ở 25,4 s; đúng thiết kế nhưng C8 không bao đoạn này, trần chênh cao khi bám ở xa còn là quyết định mở), chưa đủ số ca · C9 đạt (3 seed mỗi ô) · C10 đạt phần chạy khô, chờ Pi.
-- Rủi ro đã biết, CHƯA SỬA (ghi đủ trong `README.md` mục "Rủi ro đã biết"):
-  1. Cuối bài khi mục tiêu dừng, drone mất hình lần hai và áp sát 3,9–7,9 m ở 8/13 lần bay thẳng có mục tiêu dừng cuối bài (số cũ; nay 11/19, xem mục cập nhật 2026-11-20), kể cả khi tắt tìm lại; drone luôn ở trên mục tiêu 3,2–4,2 m, 3 lần gần như ngay trên đầu.
-  2. Ca bổ nhào: bật tìm lại lấy lại hình chậm hơn tắt ~3 s. Nguyên nhân gốc đã rõ (10 điều tra): gimbal quét cả dải 10–110° nên chỉ lướt qua vùng có mục tiêu 0,2–0,3 s mỗi vòng 3,33 s. Hướng sửa: quét quanh góc dự đoán ±25° hoặc nâng `scan_lo_deg`; viết test trước (gợi ý trong sổ ghi), rồi chạy lại SITL bổ nhào.
-  3. Mục tiêu hãm lúc mất hình (chỉ đo): gần nhất 3,2–4,2 m.
-- Việc đầu tuần cho giai đoạn 2: sửa (2) rồi (1) theo vòng 07 viết test → 05 sửa → 08 rà → SITL; chạy thêm ca leo (mất hình 14 s, seed 2–3, và hồ sơ leo 20 m) cho C8; phép đo chứng minh tìm lại có ích (mục tiêu hiện lại ở chỗ khác với dự đoán).
+## Đã xong (kèm bằng chứng)
+- Giai đoạn 1 (bám giữ 15 m, nhìn xuống 12°, gimbal 10–110°, camera Module 3 Wide trong mô phỏng): người dùng chấp nhận 11-19.
+- Giai đoạn 2 (khối tìm lại sau khi mất hình): 21 bước, chấp nhận 11-19, commit `97b7f50`. SITL `srchG3` 26 lần + `srchG4` 8 lần.
+- Giai đoạn 2b (S-16: giữ hướng ngắm cuối tới giây 12 rồi mới quét; điều tra áp sát cuối bài; sửa tài liệu): 9 bước, chấp nhận 11-20, commit `bf76ee0`. SITL `srchH1` 20 lần: bổ nhào bật 8,17 s so với tắt 8,18 s (trước ≈ 11 s). Test `onboard`: 1412 passed, 1 xfailed.
+- B1a (nhận diện máy bay): 15 bước, một vòng huấn luyện trên card (2 giờ 47 phút), chấp nhận 11-19. Báo cáo `vision\results\b1a\B1A_REPORT.md`. Test `vision`: 177 passed.
+- Dọn tên đăng nhập/IP khỏi file theo dõi, gỡ ảnh camera thử, quy trình push qua WSL. HEAD = `origin/main` (xem `git log -1`).
 
-## Việc B1a (nhận diện máy bay): xong 15 bước, một vòng huấn luyện
-- Báo cáo đã rà: `vision\results\b1a\B1A_REPORT.md`.
-- Huấn luyện trên card RX 9060 XT, 60 epoch mỗi lượt: EE 29,6 phút; DD 73,3 phút; final 64,4 phút (DD và final bị chậm do game dùng chung card); tổng 2 giờ 47 phút. Trọng số ở `vision\results\b1a\train\runs\b1a_{EE,DD,final}_s0\weights\best.pt` (không lên GitHub).
-- Kết quả chính: model EE (học máy bay tối, kiểm máy bay trắng) kém model gốc ở góc nhìn từ trên xuống (0,129 so với 0,402) và không đạt A1, A3; model DD (học trắng, kiểm tối) hơn model gốc về phát hiện nhưng báo giả 1,80/100 ở ngưỡng tự chọn. Trên video thật 1 của người dùng: model final 561/569 so với model gốc 479/569 ở đoạn bay liên tục, nhưng 69 phát hiện giả so với 4 trên 269 khung (441 nếu phóng khung lên 2304 px).
-- Kết luận: model mặc định vẫn là model gốc (yolov8n COCO, lớp airplane) ngưỡng 0,12. Model final là ứng viên vòng sau.
-- Việc vòng sau (chờ người dùng gửi video quay ở sân bay): thêm mẫu nền khó (bê tông có vệt, mái nhà, cờ, cây) rồi huấn luyện và chấm lại; đặt quy tắc ngưỡng trước khi chấm, val tách theo đoạn riêng; đo model final qua bộ bám trên video thật; thử nhận thêm lớp "kite" của model gốc (~80% lần trượt là bị gọi thành lớp này); chấm chéo cùng trọng số card/CPU; xuất NCNN cho Pi.
-- Môi trường card: `vision\.venv-gpu`; bắt buộc `torch.backends.cudnn.enabled = False`, `device=0`, script Windows có `if __name__ == "__main__"`.
+## Chưa xong
+Đang dở: không có.
+Chưa bắt đầu (chờ phần cứng hoặc dữ liệu):
+- Mọi việc trên Pi 5: chạy khối nhận diện + bám trên Pi, đo tốc độ khung, xuất model NCNN, kiểm `lab\Mo-man-hinh-pi.cmd`, hiệu chuẩn camera Wide (sau đó mới đổi camera mặc định trong mã).
+- Phần cứng drone: khớp gật servo thật, đấu nối FC Matek H743, cổng duyệt phần cứng B1–B6 (xem HANDOFF.md); mọi thao tác ghi lên FC cần người dùng duyệt riêng.
+- Huấn luyện vòng 2 (thêm mẫu nền khó từ video sân bay; đo model final qua bộ bám).
+- Việc mô phỏng đã gác, chỉ làm khi người dùng mở lại: chạy bù C8 (leo 10 m thêm 2 seed, 20 m 1 seed), trần chênh cao khi bám ở xa, ca chứng minh quét có ích, C2.
+- Một câu trong ba file tài liệu công khai còn ghi "chưa quyết sửa kịch bản hay luật hãm": nay đã quyết (không sửa); sửa câu này ở lần cập nhật tài liệu kế tiếp.
 
-## Trạng thái mã và git
-- Xem dòng cuối sổ ghi để biết commit và push của phiên 6 đã làm chưa (người dùng đã duyệt commit và push sau bài tổng kết).
+## Chưa kiểm chứng
+- Mọi kết quả là mô phỏng hoặc dữ liệu ghi sẵn: chưa bay thật, chưa chạy trên Pi, servo thật khác mô hình.
+- Chưa có ca nào cho thấy bật tìm lại tốt hơn tắt (mục tiêu luôn tự hiện lại); C2 chưa đủ bằng chứng; C8 mới 1–2 ca leo thật.
+- Áp sát cuối bài 11/19 lần (3,9–7,9 m) khi mục tiêu mô phỏng dừng gấp: rõ nguyên nhân, không sửa; chưa biết mục tiêu thật giảm tốc gấp cỡ nào.
+- Nhận diện: một video thật duy nhất, trời sáng; cỡ quy đổi là giả định; chưa chấm chéo card/CPU; model final nhiều phát hiện giả (69 so với 4 trên 269 khung).
+- Sau khi tìm lại ở xa, drone leo thêm tới +20,5 m (đúng thiết kế giữ góc 12°); chưa có trần.
 
-## Chờ người dùng
-- Chấp nhận kết quả giai đoạn 2 và B1a (trình trong bài tổng kết tối 2026-11-19).
-- Video và ảnh máy bay thật ở sân bay (để vào `.office\images\`).
-- Nguồn Pi mới: việc trên Pi, kiểm `lab\Mo-man-hinh-pi.cmd`, hiệu chuẩn camera.
+## Bước tiếp theo (khi người dùng báo đồ về)
+1. Nguồn Pi về: bật Pi, kiểm kết nối bằng `pi\pi.env`, chạy `lab\Mo-man-hinh-pi.cmd`, đo tốc độ nhận diện trên Pi với model gốc.
+2. Hiệu chuẩn camera Wide thật, cập nhật thông số camera trong hồ sơ.
+3. Lắp khớp gật servo, đo tốc độ và độ trễ thật, so với mô hình (300°/s, trễ 0,05 s); chỉnh `scan_start_s`, tốc độ quét nếu cần.
+4. Có video sân bay: huấn luyện vòng 2 theo `B1A_REPORT.md` mục việc vòng sau.
+5. Lập kế hoạch mới cho chặng phần cứng và trình người dùng duyệt trước khi làm.
 
-## Chưa kiểm chứng (chính)
-- C2; C8 mới một ca; lợi ích thật của việc quét tìm lại.
-- Nhiễu ×2: khoảng cách ~50 m ở đoạn giảm tốc cuối (2 lần chạy). Bộ bám mất nhiều thời gian TRACK khi có vật gây nhiễu độ tin cậy cao ở mọi khung.
-- Vì sao chỉ số thời gian bám (A4) không đổi theo ngưỡng 0,065–0,25.
-- Video thật: một đoạn duy nhất, trời sáng; cỡ quy đổi dùng hệ số giả định.
-- Tất cả là mô phỏng và dữ liệu ghi sẵn; chưa bay thật, chưa chạy trên Pi.
+## Theo từng vai (phiên 7, không vai nào đang chạy)
+- 02 planner — đã xong: bản nháp kế hoạch 2b · đang dở: không · chưa làm: kế hoạch chặng phần cứng.
+- 05 software-engineer — đã xong: mã S-16, tài liệu, B1A_REPORT · đang dở: không · chưa làm: sửa một câu tài liệu về quyết định luật hãm.
+- 07 test-engineer — đã xong: test đỏ/xanh S-16 (41 ca), lô SITL `srchH1`, huấn luyện và chấm B1a · đang dở: không · chưa làm: đo trên Pi.
+- 08 checker — đã xong: phản biện kế hoạch 2b, rà mã, đối chiếu số đo, rà tài liệu · đang dở: không.
+- 09 security-auditor — đã xong: soát trước khi đẩy GitHub (11-19) · đang dở: không.
+- 10 investigator — đã xong: nguyên nhân chậm 3 s, độ cao sau tìm lại, áp sát cuối bài · đang dở: không.
