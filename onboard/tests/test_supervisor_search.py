@@ -260,20 +260,23 @@ def test_search_info_values_during_episode():
     assert p1.state == SupState.LOST
 
 
+SS = {"scan_start_s": 4.01}    # S-16: sat coast_follow_s (4,0) => pha 1 quet ngay, giu dong thoi gian cu cua cac ca duoi
+
+
 def test_phase0_has_no_scan_and_phase1_scans():
-    res = run(make_sup(), scenario(t_loss=1.0), 10.0)
+    res = run(make_sup(search_kw=SS), scenario(t_loss=1.0), 10.0)
     for t, o in res:
         if o.search is None or o.search.ep_s is None:
             continue
         if o.search.phase == 0:
             assert o.search.scan_delta_rad is None
-        elif o.search.phase == 1:
+        elif o.search.phase == 1 and o.search.ep_s >= SS["scan_start_s"]:     # ep_s 4,0..4,01: chua toi moc
             assert o.search.scan_delta_rad is not None
             assert D(10.0) - 1e-9 <= o.search.scan_delta_rad <= D(110.0) + 1e-9
 
 
 def test_phase1_command_is_hover_with_swept_yaw():
-    res = run(make_sup(), scenario(t_loss=1.0), 12.0)
+    res = run(make_sup(search_kw=SS), scenario(t_loss=1.0), 12.0)
     p1 = [o for t, o in res if o.search is not None and o.search.phase == 1]
     assert p1 and all(o.send and o.cmd is not None for o in p1)
     assert all(hspeed(o) < 0.5 for o in p1)
@@ -331,7 +334,7 @@ def test_disengage_closes_episode_and_new_one_gets_new_clock():
 # S-3: TRACK chua du hold trong pha >= 1
 # =====================================================================
 def _blip_run(enabled=True):
-    sup = make_sup(enabled=enabled)
+    sup = make_sup(enabled=enabled, search_kw=SS if enabled else None)
     return run(sup, scenario(t_loss=1.0, windows=((6.0, 6.9),)), 9.0)
 
 
@@ -387,3 +390,16 @@ def test_s3_after_enough_track_hold_control_returns_to_guidance_pursuit():
     closed = [t for t, o in res if o.search is not None and o.search.closed]
     assert len(closed) == 1 and 7.0 - 1e-6 <= closed[0] <= 7.0 + 2 * DT
     assert hspeed(res[-1][1]) > 1.0          # muc tieu 60 m phia truoc: guidance.step duoi theo
+
+
+def test_s16_default_scan_start_pha1_holds_gimbal_and_yaw_until_12s():
+    """S-16 mac dinh: trong pha 1 truoc scan_start_s (12 s) khong quet khop (scan_delta_rad None) va lenh yaw khong doi; sau moc: quet."""
+    res = run(make_sup(), scenario(t_loss=1.0), 20.0)
+    ep = [(o.search.ep_s, o) for t, o in res if o.search is not None and o.search.ep_s is not None and o.search.phase == 1]
+    pre = [o for e, o in ep if e < 12.0 - 2 * DT]
+    post = [o for e, o in ep if e >= 12.0 + 2 * DT]
+    assert pre and post
+    assert all(o.search.scan_delta_rad is None for o in pre)
+    yaws = [o.cmd.yaw_rad for o in pre]
+    assert max(yaws) - min(yaws) < D(1.0)
+    assert all(o.search.scan_delta_rad is not None for o in post)

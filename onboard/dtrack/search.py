@@ -123,7 +123,14 @@ class SearchPlanner:
         self._z0 = None if own is None else float(own.pos_ned[2])
         self._p_stop = p_stop_ned
 
-    def step(self, t: float, own: OwnState, phase: int) -> SearchOutput:
+    def follow(self, t: float, delta: Optional[float]) -> None:
+        """Truoc scan_start_s (S-16): khong quet, chi theo goc khop thuc de quet bat dau lien tuc."""
+        self._t = t
+        if delta is not None and math.isfinite(delta):
+            self._delta = delta
+
+    def step(self, t: float, own: OwnState, phase: int, sweep: bool = True) -> SearchOutput:
+        """sweep=False (truoc scan_start_s): khong quet khop/yaw, chi tinh leo; yaw giu yaw0, scan_delta = goc khop dang theo."""
         c = self.cfg
         dt = min(max(t - self._t, 0.0), _DT_MAX_S)
         self._t = t
@@ -131,19 +138,20 @@ class SearchPlanner:
         lo = self._lo2 if phase >= 2 else self._lo
         hi = self._hi
         d = self._delta
-        if d < lo:
-            self._dir = 1
-        elif d > hi:
-            self._dir = -1
-        d += self._dir * math.radians(c.scan_rate_dps) * dt
-        if d >= hi:
-            d, self._dir = 2.0 * hi - d, -1
-        elif d <= lo and self._dir < 0:
-            d, self._dir = 2.0 * lo - d, 1
-        self._delta = d = max(lo, min(hi, d))
+        if sweep:
+            if d < lo:
+                self._dir = 1
+            elif d > hi:
+                self._dir = -1
+            d += self._dir * math.radians(c.scan_rate_dps) * dt
+            if d >= hi:
+                d, self._dir = 2.0 * hi - d, -1
+            elif d <= lo and self._dir < 0:
+                d, self._dir = 2.0 * lo - d, 1
+            self._delta = d = max(lo, min(hi, d))
         # --- yaw ---
         amp = math.radians(c.yaw_amp_deg)
-        if amp > 0.0:
+        if sweep and amp > 0.0:
             self._ys += math.radians(c.yaw_rate_dps) * dt
             yaw = (self._yaw0 + tri_sweep(self._ys, 0.0, -amp, amp, 1) + math.pi) % (2.0 * math.pi) - math.pi
         else:

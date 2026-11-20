@@ -29,7 +29,7 @@ DIST_M = 74.0
 DELTA_DEG = 85.0           # huong muc tieu luc dau (goc khop ma bo bam bat duoc)
 
 
-def run_case(seed, az_deg, lag, delta_post=DELTA_DEG):
+def run_case(seed, az_deg, lag, delta_post=DELTA_DEG, scan_start_s=None):
     """Tra dict(first_track, closed, rtl) tinh bang giay tu T_RESUME (None = khong xay ra trong WINDOW_S)."""
     import numpy as np
     from dtrack.config import _fill, load_profile, profile_dict
@@ -46,6 +46,8 @@ def run_case(seed, az_deg, lag, delta_post=DELTA_DEG):
     _fill(cfg.synthetic, profile_dict("realdet")["synthetic"], "synthetic")
     cfg.synthetic.seed = seed
     cfg.search.scan_rate_dps = 60.0
+    if scan_start_s is not None:
+        cfg.search.scan_start_s = scan_start_s     # S-16: mac dinh 12 s; ca nay can quet ngay sau pha 0
     cam = cfg.camera.to_model()
     tracker = SingleTargetTracker(cam, TrackerConfig(range=RangeConfig(target_size_m=cfg.target_shape.span_m)))
     det = SyntheticDetector(cam, cfg.synthetic, cfg.target_shape)
@@ -93,8 +95,8 @@ def run_case(seed, az_deg, lag, delta_post=DELTA_DEG):
     return {"first_track": first_track, "closed": closed, "rtl": rtl}
 
 
-def run_grid(lag, delta_post=DELTA_DEG):
-    res = [run_case(s, az, lag, delta_post) for az in AZ_DEG for s in SEEDS]
+def run_grid(lag, delta_post=DELTA_DEG, scan_start_s=None):
+    res = [run_case(s, az, lag, delta_post, scan_start_s) for az in AZ_DEG for s in SEEDS]
     ok = sum(1 for r in res if r["closed"] is not None and r["closed"] <= WINDOW_S)
     rtls = sum(1 for r in res if r["rtl"] is not None)
     return res, ok, rtls
@@ -126,7 +128,7 @@ def test_measure_scan_60dps_at_pose_lag_0p06(record_property):
 def test_scan_needed_target_moved_while_hidden_reacquired_at_lag_0():
     """Ca CHAN dung quet: trong luc mat hinh muc tieu doi huong den goc khop 30 do (cach goc khop luc mat hinh ~55 do, ngoai tam nhin camera);
     sau do dung yen. Neu khop khong quet thi khong bat lai duoc (da thu tren ban sao hong, xem bao cao)."""
-    res, ok, rtls = run_grid(0.0, delta_post=30.0)
+    res, ok, rtls = run_grid(0.0, delta_post=30.0, scan_start_s=4.01)   # S-16: scan_start_s sat coast_follow_s giu dong thoi gian cu
     print("muc tieu doi huong: dong dot %d/12, RTL %d" % (ok, rtls))
     assert rtls == 0
     assert ok >= 10

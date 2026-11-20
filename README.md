@@ -8,11 +8,11 @@ Dự án nhằm làm cho một drone tự nhìn thấy một mục tiêu bay b�
 
 Đến ngày 2026-11-19, giai đoạn 1 đã xong phần làm. Giai đoạn 1 là thêm cho camera một khớp gật (giá đỡ ngẩng hoặc cúi bằng servo) để giữ mục tiêu trong khung hình, và thử trong mô phỏng. Kết quả: ở tốc độ 36 km/h, drone đạt 14/14 lần của "đợt D" (đợt thử thứ tư, 6 lần giữ 25 m và 8 lần giữ 15 m, mỗi cấu hình ba "seed", tức ba số ngẫu nhiên khác nhau). Ở 15 m, khoảng cách nhỏ nhất giữa hai máy bay là 11,16 m (mức an toàn tối thiểu đặt là 6 m). Mục tiêu bay ra khỏi khung hình 0 giây trong các lần có chấm điểm. Các biến thể sau đó (servo chậm, đổi góc nhìn, giữ 20 m, camera "Wide" là camera góc rộng) phần lớn chỉ thử một lần mỗi ô, nên chưa phải kết luận chắc chắn. Chủ dự án đã chấp nhận giai đoạn 1 (sổ ghi dòng 521).
 
-Giai đoạn 2 (tìm lại mục tiêu sau khi mất hình) đã có mã và đã chạy thử trong mô phỏng: khối tìm lại mặc định TẮT, bật bằng hồ sơ `search_plane_r15`. Khi mất hình drone không còn leo cao (lô `srchG3`: leo tối đa 0,00–0,06 m). Kết quả và đặc biệt mục "Rủi ro đã biết" nằm ở phần dưới; giai đoạn 2 chưa được chủ dự án nghiệm thu.
+Giai đoạn 2 (tìm lại mục tiêu sau khi mất hình) đã có mã và đã chạy thử trong mô phỏng: khối tìm lại mặc định TẮT, bật bằng hồ sơ `search_plane_r15`. Khi mất hình drone không còn leo cao (lô `srchG3`: leo tối đa 0,00–0,06 m). Ngày 2026-11-20 (giai đoạn 2b) đã sửa lỗi lấy lại hình chậm ở ca bổ nhào (quy tắc S-16: không quét gimbal trong 12 s đầu của đợt tìm): lô `srchH1` (20 lần) cho thấy bật tìm lại không còn chậm hơn tắt (8,17 s so với 8,18 s), nhưng chưa có ca nào chứng minh việc quét có ích. Rủi ro áp sát cuối bài (a) vẫn chưa sửa, nguyên nhân gốc đã rõ. Kết quả và đặc biệt mục "Rủi ro đã biết" nằm ở phần dưới; giai đoạn 2 chưa được chủ dự án nghiệm thu.
 
 Còn nhiều việc chưa xong. Phần nhận diện trên video phải làm lại, vì mục tiêu đã đổi từ drone sang máy bay trainer hoặc drone. Máy tính nhỏ Raspberry Pi 5 đã gắn camera thật nhưng đang chờ nguồn điện mới. Mọi bước gần bay thật phải được chủ dự án duyệt từng cổng. Mục tiêu thiết kế là tốc độ tối đa 400 km/h, nhưng chưa có bằng chứng nào cho con số này.
 
-## Trạng thái hiện tại (cập nhật 2026-11-19)
+## Trạng thái hiện tại (cập nhật 2026-11-20)
 
 Chú thích: **ĐẠT** đã kiểm và đạt tiêu chí. **ĐANG LÀM** có việc đang dở. **CHƯA LÀM** chưa bắt đầu. **CHƯA CHẠY THẬT** chưa thử trên phần cứng thật.
 
@@ -20,7 +20,7 @@ Chú thích: **ĐẠT** đã kiểm và đạt tiêu chí. **ĐANG LÀM** có vi
 |---|---|---|
 | Mô phỏng tự bám với khớp gật camera (giai đoạn 1) | ĐẠT trong mô phỏng, chủ dự án đã chấp nhận (sổ ghi dòng 521) | Khớp gật dải 10°–110°. Đợt D ở 10 m/s: đạt 14/14 lần (6 lần giữ 25 m, 8 lần giữ 15 m); ở 15 m khoảng cách nhỏ nhất 11,16 m (sàn chấm 6 m). Camera Wide (số danh định): 5 trên 5 lần đạt. Phần lớn ô chỉ thử một lần |
 | Tự leo cao khi mất hình | ĐÃ SỬA trong mô phỏng | Lô `srchG3`: leo tối đa khi mù 0,00–0,06 m. Pha leo cao chủ động (tắt mặc định) đã kích hoạt 1 lần ở lô bù `srchG4`, chưa đủ ca |
-| Tìm lại mục tiêu khi mất (giai đoạn 2) | ĐẠT MỘT PHẦN trong mô phỏng, có rủi ro đã biết | Mã có, mặc định TẮT. Lô `srchG3` (26 lần): tìm lại 4/4 bay thẳng (5/5 sau lô bù `srchG4`), 5/5 bổ nhào, RTL ở 20,03 s khi mất 25 s. Còn lỗ hổng, xem mục "Giai đoạn 2: tìm lại mục tiêu" và "Rủi ro đã biết" |
+| Tìm lại mục tiêu khi mất (giai đoạn 2) | ĐẠT MỘT PHẦN trong mô phỏng, có rủi ro đã biết | Mã có, mặc định TẮT. Lô `srchG3` (26 lần): tìm lại 4/4 bay thẳng (5/5 sau lô bù `srchG4`), 5/5 bổ nhào, RTL ở 20,03 s khi mất 25 s. Giai đoạn 2b, lô `srchH1` (20 lần, 2026-11-20): sau quy tắc S-16, bổ nhào 25° mất hình 8 s lấy lại hình sau 8,17 s (bật) so với 8,18 s (tắt), trước đó ≈ 11,0 s so với ≈ 8,0 s. Bộ test `onboard`: 1412 passed, 1 xfailed. Còn lỗ hổng (áp sát cuối bài chưa sửa; chưa chứng minh quét có ích), xem mục "Giai đoạn 2: tìm lại mục tiêu" và "Rủi ro đã biết" |
 | Nhận diện mục tiêu trên video ghi sẵn (cổng B1) | PHẢI LÀM LẠI | Kết quả cũ chấm cho "drone", nay mục tiêu là máy bay trainer hoặc drone. Kế hoạch mới chưa được duyệt. Dữ liệu Det-Fly coi là đủ (7.635 cặp ảnh-nhãn khớp). Phần nhận diện máy bay (B1a, `vision/`) đang làm dở: xem `vision/README.md` hoặc báo cáo B1a khi có |
 | Demo màn hình lab trên PC (video ghi sẵn) | ĐẠT | Hiện khung hình, khóa mục tiêu bằng nút bấm. Không gửi lệnh tới drone hay bộ điều khiển bay nào |
 | Demo trên Raspberry Pi 5 với camera thật | ĐANG LÀM, chờ nguồn | Pi 5 đã cài hệ điều hành, camera Wide đã gắn và chụp thử được. Chạy màn hình lab thì Pi bị sụt nguồn, chưa có số đo. Chờ nguồn mới |
@@ -33,7 +33,7 @@ Chú thích: **ĐẠT** đã kiểm và đạt tiêu chí. **ĐANG LÀM** có vi
 **Đang chờ chủ dự án:**
 
 1. (Đã xong) Giai đoạn 1 và các mặc định đề nghị (giữ 15 m, đường ngắm hướng xuống 12°, khớp gật 10°–110°, camera Wide) đã được chủ dự án chấp nhận, sổ ghi dòng 521.
-2. Xem kết quả giai đoạn 2 và các rủi ro đã biết (mục "Rủi ro đã biết"), quyết định có sửa rủi ro (a) và (c) trước không.
+2. Xem kết quả giai đoạn 2 và các rủi ro đã biết (mục "Rủi ro đã biết"), quyết định có sửa rủi ro (a) (áp sát cuối bài, nguyên nhân gốc đã rõ) trước không. Rủi ro (c) đã sửa ở giai đoạn 2b.
 3. Duyệt kế hoạch làm lại cổng B1 (nhận diện theo mục tiêu mới). Cần thêm ảnh hoặc video máy bay: bộ MMFW-UAV (140 GB, chủ dự án tự tải khi ngồi máy) hoặc video tự quay.
 4. Duyệt làm video báo cáo (hình tĩnh đã duyệt).
 5. Nguồn điện mới cho Raspberry Pi 5.
@@ -42,7 +42,7 @@ Chú thích: **ĐẠT** đã kiểm và đạt tiêu chí. **ĐANG LÀM** có vi
 
 **Việc kế tiếp, theo thứ tự:**
 
-1. Giai đoạn 2, phần còn lại: xử lý đợt COAST thứ hai cuối bài (rủi ro a), sửa dải quét gimbal ở pha 1 vì bật tìm lại lấy lại hình chậm hơn tắt ở ca bổ nhào (rủi ro c), thêm ca cho pha leo cao và thêm seed bay thẳng (rủi ro d).
+1. Giai đoạn 2, phần còn lại: sửa nguyên nhân áp sát cuối bài (rủi ro a); chạy bù ca leo 10 m thêm 2 seed và leo 20 m 1 seed; quyết định trần chênh cao khi bám ở xa; tìm ca chứng minh việc quét có ích (rủi ro d).
 2. Làm lại cổng B1 theo mục tiêu mới, trên camera Wide, sau khi kế hoạch được duyệt.
 3. Đổi camera mặc định trong mã sang Wide và hiệu chuẩn trên Pi (việc riêng, chưa có kế hoạch).
 4. Rà soát độc lập phần mã bám và bảo mật trang lab trước khi mở ra mạng.
@@ -70,7 +70,7 @@ Các cổng duyệt B1–B6: chủ dự án duyệt từng cổng trước khi s
 | B5 | Thử tích hợp trên mặt đất: chốt camera và khoảng cách giữ | Chưa. Đề nghị đang dùng: camera Wide, giữ 15 m |
 | B6 | Bay quan sát có kiểm soát | Chưa. Chỉ sau B1–B5 đạt và được duyệt |
 
-## Giai đoạn 2: tìm lại mục tiêu sau khi mất hình (cập nhật 2026-11-19)
+## Giai đoạn 2: tìm lại mục tiêu sau khi mất hình (cập nhật 2026-11-20)
 
 Tất cả số dưới đây là mô phỏng SITL, chưa bay thật, chưa chạy trên Raspberry Pi.
 
@@ -79,11 +79,11 @@ Tất cả số dưới đây là mô phỏng SITL, chưa bay thật, chưa ch�
 | Pha | Việc drone làm |
 |---|---|
 | 0 (tối đa 4 s, `supervisor.coast_follow_s`) | Bay tiếp theo dự đoán vận tốc mục tiêu nhớ được |
-| 1 | Treo tại chỗ (tốc độ ngang ≤ 0,3 m/s). Khớp gật quét 60°/s (`scan_rate_dps`) trong dải 10°–110°; yaw quét ±45° (`yaw_amp_deg`) quanh hướng lúc vào pha 1. Khi tracker báo TRACK lại thì khớp ngừng quét và bám mục tiêu |
-| 2 (leo cao) | Mặc định TẮT (`climb_m` = 0). Khi bật, leo thêm `climb_m` từ giây `climb_start_s` |
+| 1 | Treo tại chỗ (tốc độ ngang ≤ 0,3 m/s). Quy tắc S-16: trước mốc `search.scan_start_s` = 12,0 s (tính từ đầu đợt) khớp gật KHÔNG quét mà giữ hướng ngắm cuối theo hệ thế giới (tự bù khi thân drone đổi tư thế), drone giữ hướng mũi lúc vào pha 1 (không quét yaw). Từ mốc đó: khớp gật quét 60°/s (`scan_rate_dps`) cả dải 10°–110° và yaw quét ±45° (`yaw_amp_deg`) như trước, bắt đầu liên tục từ góc hiện tại. Khi tracker báo TRACK lại thì khớp ngừng quét và bám mục tiêu (bộ quét cập nhật theo góc khớp thực trong lúc đó) |
+| 2 (leo cao) | Mặc định TẮT (`climb_m` = 0). Khi bật, leo thêm `climb_m` từ giây `climb_start_s`, độc lập với mốc quét |
 | Hết 20 s | Yêu cầu RTL một lần |
 
-"Tìm lại" nghĩa là TRACK liên tục từ 1,0 s trở lên (`reacquire_hold_s`); lúc đó đợt đóng và quyền điều khiển trả về luật bám bình thường. Khi mất hình drone không leo cao (C1). Cơ chế "giả định mục tiêu hãm" khi bay mù vẫn còn trong mã nhưng TẮT trong hồ sơ (`blind_floor_m` = 0, `blind_v_cap_mps` = 0) theo quyết định của chủ dự án; hệ quả là rủi ro (b) bên dưới.
+Khi bật tìm lại, `scan_start_s` phải thỏa `supervisor.coast_follow_s` < `scan_start_s` < `search.total_s` (kiểm ở `config.py`). "Tìm lại" nghĩa là TRACK liên tục từ 1,0 s trở lên (`reacquire_hold_s`); lúc đó đợt đóng và quyền điều khiển trả về luật bám bình thường. Khi mất hình drone không leo cao (C1). Cơ chế "giả định mục tiêu hãm" khi bay mù vẫn còn trong mã nhưng TẮT trong hồ sơ (`blind_floor_m` = 0, `blind_v_cap_mps` = 0) theo quyết định của chủ dự án; hệ quả là rủi ro (b) bên dưới.
 
 **Cách chạy một ca** (WSL, mô phỏng thật tốn khoảng 2,5–4,5 phút mỗi lần; thêm `DRY_RUN=1` để chỉ in dòng lệnh rồi thoát, không khởi động gì). Biến riêng của ca tìm lại, chỉ đi với `SCENARIO=blackout`: `EVENT_AT` (giây kể từ `t_ws`, lúc bắt đầu cửa sổ đo khi khoảng cách đạt mức đặt; mặc định 40), `BLACKOUT_S` (độ dài mất hình, mặc định 3), `POST_S` (giây quan sát sau khi hết mất hình, mặc định 15), `BLACKOUT_BRAKE` (m/s², mục tiêu hãm đúng lúc mất hình), `MEASURE_ONLY=1` (tiêu chí khoảng cách chỉ in để đo, không chấm). `PROFILE` và `CONFIG` loại trừ nhau.
 
@@ -108,8 +108,8 @@ Ba dòng lệnh này đã được in ra bằng `DRY_RUN=1` và khớp `run_clos
 | Ca | Kết quả |
 |---|---|
 | Mục tiêu bay thẳng, mất hình 8 s, bật tìm lại | Tìm lại 5/5 seed (4 seed ở `srchG3`, thêm seed 1 ở lô bù `srchG4` lúc 8,03 s), sau 7,97–8,13 s. Cả 5 lần đều bắt lại đúng lúc hình trở lại, nên chưa chứng minh việc quét tự tìm ra mục tiêu |
-| Mất hình 14 s, cấu hình leo `search_plane_r15_climb10.json`, seed 1 (`srchG4`) | Pha leo đã kích hoạt: pha leo vào khoảng 10,2 s sau lúc mất hình, độ cao tăng rõ sau khoảng 11,2 s; leo 5,20 m tính từ độ cao thấp nhất trong cửa sổ mất hình (4,86 m tính từ lúc bắt đầu mất hình) tới lúc tìm lại (mức cho phép 10 + 1 m); tìm lại sau 13,97 s, không RTL; sau khi đóng đợt độ cao còn lên tới +9,15 m (khoảng 17 s sau lúc mất hình), vẫn trong mức 11 m, nguyên nhân chưa điều tra; d3 nhỏ nhất trong cửa sổ mất hình 15,59 m, cả chuyến 15,31 m (tính từ lúc bắt đầu bám). Mới 1 lần (kế hoạch: 10 m × 3 seed, 20 m × 1 seed) |
-| Bổ nhào 25°, bật tìm lại | Tìm lại 5/5 seed, sau 10,97–11,07 s |
+| Mất hình 14 s, cấu hình leo `search_plane_r15_climb10.json`, seed 1 (`srchG4`) | Pha leo đã kích hoạt: pha leo vào khoảng 10,2 s sau lúc mất hình, độ cao tăng rõ sau khoảng 11,2 s; leo 5,20 m tính từ độ cao thấp nhất trong cửa sổ mất hình (4,86 m tính từ lúc bắt đầu mất hình) tới lúc tìm lại (mức cho phép 10 + 1 m); tìm lại sau 13,97 s, không RTL; sau khi tìm lại độ cao còn tăng tới đỉnh 53,74 m ở 25,4 s sau lúc mất hình (+20,47 m so với độ cao thấp nhất trong cửa sổ mất hình), về mức bám bình thường khoảng 45 s; đúng thiết kế (tìm lại ở cách ngang 100–137 m, luật giữ góc nhìn xuống 12° đòi cao hơn mục tiêu khoảng cự ly × tan 12° ≈ 21–28 m, lệnh lên bão hòa 2,5 m/s), nhưng nếu đo cả đoạn này thì vượt mức 11 m; C8 không bao đoạn này (lỗ hổng tiêu chí); d3 nhỏ nhất trong cửa sổ mất hình 15,59 m, cả chuyến 15,31 m (tính từ lúc bắt đầu bám). Mới 1 lần (kế hoạch: 10 m × 3 seed, 20 m × 1 seed) |
+| Bổ nhào 25°, bật tìm lại | Tìm lại 5/5 seed, sau 10,97–11,07 s (trước S-16; sau S-16 xem lô `srchH1` bên dưới) |
 | Mất hình 25 s | Không tìm lại; RTL ở 20,03 s |
 | Khoảng cách 3D nhỏ nhất trong cửa sổ mất hình, mục tiêu bay đều | 15,13–15,89 m (mức yêu cầu 8 m) |
 | Leo tối đa khi mù | 0,00–0,06 m (ở các ca có đo) |
@@ -117,17 +117,32 @@ Ba dòng lệnh này đã được in ra bằng `DRY_RUN=1` và khớp `run_clos
 | Ba ô bám không sự kiện (lần 13–15 của `srchG3`) | Đạt: khoảng cách nhỏ nhất 11,28 / 11,93 / 11,40 m, ra khung 0 s; mỗi ô 1 seed |
 | Lô bù `srchG4`: ba ô bám, seed 2 và 3 | Đạt cả 6 lần: bổ nhào 15° 11,59 / 12,22 m; bổ nhào 25° 11,10 / 11,24 m; mục tiêu hãm 1,5 m/s² (mất hình 3 s) 13,12 / 11,56 m; ra khung 0 s; TRACK 100 / 100 / 100 / 100 / 97,4 / 97,5%. Cùng lô cũ: mỗi ô 3 seed, tiêu chí C9 đạt |
 
-7 lần công cụ báo không đạt, 07 và 08 đều kết luận không lần nào do khối tìm lại: 4 lần do sàn 6 m áp cho cả chuyến (xem rủi ro a), 3 lần do cổng "TRACK ≥ 90%" với nguồn phát hiện theo cụm (86,2–88,7%; ô này theo kế hoạch chỉ báo cáo, không dùng làm cổng).
+7 lần công cụ báo không đạt, hai lần đo độc lập đều kết luận không lần nào do khối tìm lại: 4 lần do sàn 6 m áp cho cả chuyến (xem rủi ro a), 3 lần do cổng "TRACK ≥ 90%" với nguồn phát hiện theo cụm (86,2–88,7%; ô này theo kế hoạch chỉ báo cáo, không dùng làm cổng).
+
+**Kết quả lô `srchH1`** (giai đoạn 2b, quy tắc S-16, 20 lần, 2026-11-20; bảng gốc `onboard/simtools/out/_report_srchH1/srchH1_table.md`, không lên GitHub). "Thời gian lấy lại hình" = state về TRACK lần đầu sau COAST đầu, tính từ lúc bắt đầu mất hình:
+
+| Ca | Kết quả |
+|---|---|
+| Bổ nhào 25°, mất hình 8 s, seed 1–5 | Bật: 8,22 / 8,16 / 8,17 / 8,18 / 8,14 s (trung bình 8,17 s). Tắt, cùng seed: 8,16 / 8,17 / 8,17 / 8,23 / 8,17 s (trung bình 8,18 s). Chênh −0,006 s (mức đặt ≤ +1,0 s). Trước khi sửa: bật ≈ 11,0–11,2 s, chậm hơn tắt ≈ 3 s |
+| Bổ nhào 25°, mất hình 7 s và 9 s (seed 1) | 7 s: bật 7,17 s, tắt 7,22 s. 9 s: bật 9,19 s, tắt 9,20 s |
+| Bay thẳng, mất hình 8 s, bật, seed 1–3 | Tìm lại 3/3, sau 8,16 / 8,18 / 8,20 s |
+| Bay thẳng, mất hình 25 s | Không tìm lại; RTL ở 20,04 s tính từ đầu đợt |
+| Bay thẳng, mất hình 14 s | Quét bắt đầu ở 12,03 s; hình trở lại ở 14,02 s lúc gimbal đang quét ở xa; bám lại ở 14,98 s (trễ 0,96 s) |
+| Cấu hình leo `search_plane_r15_climb10`, mất hình 14 s | Leo bắt đầu ở 10,6 s, tăng 5,54 m tới lúc tìm lại (14,0 s); các mốc này tính theo đồng hồ đợt, còn các số khác trong bảng tính từ lúc bắt đầu mất hình (lệch khoảng 0,18 s). Cùng cách đo, lần trước (`srchG4`, cùng script): 10,67 s / 5,24 m / 13,97 s; nay 10,6 s / 5,54 m / 14,0 s |
+| Bộ test `onboard` | 1412 passed, 1 xfailed |
+
+Hạn chế phải đọc kèm: cả 14 lần bổ nhào (7–9 s) đều ngắn hơn mốc 12 s nên khối quét không chạy lần nào. Kết quả chứng minh "bật không còn làm chậm", KHÔNG chứng minh việc quét có ích; tới nay chưa có ca nào bật tốt hơn tắt. Đánh đổi: mục tiêu hiện lại ở chỗ khác chỉ được quét tìm từ giây 12 (còn 8 s trước RTL); hình trở lại sau giây 12 có thể trễ tới gần một chu kỳ quét (đo được 0,96 s ở ca mất hình 14 s: hình trở lại ở 14,02 s, bám lại ở 14,98 s). Hệ quả nhỏ đã biết, suy từ mã và chưa chạy thử: nếu mốc quét tới lúc đang leo mà góc đang giữ thấp hơn biên dưới dải quét pha 2 (70°) thì lệnh gimbal nhảy một lần lên biên. Ba lần bay thẳng 8 s của lô này cũng áp sát cuối bài 4,72 / 5,54 / 4,51 m (rủi ro a, bảng `srchH1_table.md`, cột `d3min_trip`).
 
 ### Rủi ro đã biết
 
 Viết thẳng, chưa sửa trừ khi ghi khác:
 
-- **(a) Áp sát cuối bài.** Khi mục tiêu dừng ở cuối bài, drone vào một đợt COAST thứ hai và áp sát 3,89–7,87 m ở 8/13 lần (mẫu số = tất cả lần bay thẳng có mục tiêu dừng cuối bài, không tính ca mất hình 25 s và ca hãm 3 / 8 m/s²: `srchG3` lần 1–5, 15, 23–26 và `srchG4` lần 2, 7, 8; 8 lần dưới 8 m là `srchG3` lần 1–5, 24, 26 và `srchG4` lần 2, với 5,21 m ngoài cửa sổ mất hình, trong cửa sổ 15,72 m; lúc gần nhất lần này drone cao hơn mục tiêu 4,00 m, góc nâng 50,1°), kể cả khi tắt tìm lại (nên không phải lỗi của khối tìm lại). Lúc gần nhất drone ở TRÊN mục tiêu 3,3–4,2 m, góc nâng 27–75°; "gần như trên đầu" chỉ hợp 3 lần trên 65° (66,7–75°). Bám bình thường khoảng 11–13° ở ba lần được tính lại (báo cáo đo ghi 11–19° cho lần 6–11, 13–19). Cùng lúc đó mục tiêu ra khỏi khung 1,56–3,88 s (lần 1, 5, 24, 26) và khoảng cách lớn nhất tới 57 m. Chưa sửa. Đây là nguyên nhân 5 trong 8 lần công cụ báo không đạt của hai lô `srchG3` + `srchG4` (riêng `srchG3`: 4 trong 7).
+- **(a) Áp sát cuối bài.** Khi mục tiêu dừng ở cuối bài, drone vào một đợt COAST thứ hai và áp sát 3,89–7,87 m ở 11/19 lần (mẫu số = tất cả lần bay thẳng có mục tiêu dừng cuối bài; không tính ca mất hình 25 s (RTL) và ca mục tiêu hãm 3 / 8 m/s² lúc mất hình. Đếm: `srchG3` lần 1–5, 15, 23–26 (10 lần, 7 dưới 8 m); `srchG4` lần 1, 2, 7, 8 (4 lần, 1 dưới 8 m; lần 1 là ca leo mất hình 14 s, cả chuyến 15,31 m); `srchH1` lần 15, 16, 17, 19, 20 (5 lần, 3 dưới 8 m: 4,72 / 5,54 / 4,51 m; lần 19, 20 là 14,93 / 14,95 m). Bản trước ghi 8/13 do chưa đếm ca mất hình 14 s. 11 lần dưới 8 m là `srchG3` lần 1–5, 24, 26, `srchG4` lần 2 và `srchH1` lần 15–17; `srchG4` lần 2: 5,21 m ngoài cửa sổ mất hình, trong cửa sổ 15,72 m; lúc gần nhất lần này drone cao hơn mục tiêu 4,00 m, góc nâng 50,1°), kể cả khi tắt tìm lại (nên không phải lỗi của khối tìm lại). Lúc gần nhất drone ở TRÊN mục tiêu 3,3–4,2 m, góc nâng 27–75°; "gần như trên đầu" chỉ hợp 3 lần trên 65° (66,7–75°). Bám bình thường khoảng 11–13° ở ba lần được tính lại (báo cáo đo ghi 11–19° cho lần 6–11, 13–19). Cùng lúc đó mục tiêu ra khỏi khung 1,56–3,88 s (lần 1, 5, 24, 26) và khoảng cách lớn nhất tới 57 m. Chưa sửa. Đây là nguyên nhân 5 trong 8 lần công cụ báo không đạt của hai lô `srchG3` + `srchG4` (riêng `srchG3`: 4 trong 7); lô `srchH1` thêm 3 lần cùng hiện tượng (lần 15–17, cả ba báo không đạt vì sàn 6 m). Nhận xét theo bảng: cả 11 lần áp sát đều là ca mất hình 8 s (drone còn đang đuổi khi mục tiêu dừng); 13 ca mất hình 8 s thì 11 bị, 2 ca còn lại (`srchG3` lần 23, 25: 8,47 / 8,70 m) sát ngưỡng 8 m; 3 ca mất hình 14 s không bị. Cú dừng khoảng 7 m/s² là của mục tiêu mô phỏng (một máy bay nhiều cánh quạt nhận lệnh vận tốc 0); máy bay cánh bằng thật khó giảm tốc gấp như vậy khi đang bay. Mức giảm tốc lớn nhất thực tế của mục tiêu chưa được chốt, và chưa quyết định hướng sửa (sửa kịch bản mô phỏng hay sửa luật hãm của drone).
+  **Nguyên nhân gốc (đã điều tra, chưa sửa).** Lệnh dừng của mục tiêu mô phỏng làm nó hãm khoảng 7 m/s² ở đỉnh (5,9 m/s² trung bình trong 1 s) và đứng sau khoảng 2,5 s. Drone chỉ được hãm `a_decel_mps2` = 3,0 m/s², và trễ đáp ứng của bộ điều khiển bay (trễ 0,12–0,16 s, hằng số thời gian 0,65–0,75 s) không được tính trong trần tốc độ tiếp cận. Khoảng cách nhỏ nhất phụ thuộc tốc độ drone lúc qua 10 m: 9,6 m/s cho 4,13 m, 4,9 m/s cho 8,70 m. Lùi khẩn làm mũi ngóc 36–43°, gimbal kẹt ở biên 110°, mục tiêu ra đáy khung và thành đợt mất hình thứ hai; trong lúc đó lệnh lùi chạy tiếp và drone văng xa 36–57 m. Khối tìm lại không liên quan. Mục tiêu hãm 1,6 m/s² thì không bị. Theo mô hình tính (chưa chạy SITL): mục tiêu hãm quá khoảng 3 m/s² sẽ bị. Hướng sửa dự kiến: dùng cự ly dự đoán (cự ly + tốc độ tiếp cận × khoảng 0,85 s) cho trần tiếp cận và lệnh lùi (theo mô hình: 7,3–11,1 m), giới hạn góc ngóc khi lùi, chặn quãng lùi khi mất hình. Script điều tra: `onboard/simtools/out/_report_srchG4/inv_endleg/` (thư mục `out` không lên GitHub).
 - **(b) Mục tiêu hãm khi drone mù** (1,5 / 3 / 8 m/s², chỉ đo, không tính đạt hay không): gần nhất cả chuyến 4,23 / 3,24 / 3,38 m, drone ở trên 3,2–3,3 m (góc nâng 51,6° / 85,7° / 78,5°). Ca 1,5 m/s² tìm lại ở 17,90 s; ca 3 và 8 m/s² không tìm lại, RTL ở 20 s. Đây là cái giá của việc tắt cơ chế giả định mục tiêu hãm (chủ dự án chấp nhận vì bật thì drone tụt lại xa khi hình chập chờn); thiết kế còn ghi thêm rủi ro mục tiêu phanh rồi quay đầu lao lại lúc drone mù (bản cài thử đo khoảng 1,0 m), không có mô hình nào bao được.
-- **(c) Ca bổ nhào, bật tìm lại lấy lại hình CHẬM hơn tắt khoảng 3 s** (≈ 11,0 s so với ≈ 8,0 s; 5 seed bật, 1 seed tắt, cùng cách đo). Nguyên nhân đã điều tra xong: khi bật, pha 1 quét góc gimbal cả dải 10°–110° (chu kỳ 3,33 s). Mục tiêu bổ nhào nằm thấp (góc ngẩng khoảng −42° lúc 8 s) nên chỉ lọt khung khi góc gimbal từ khoảng 97–100° trở lên, tức 0,2–0,3 s mỗi chu kỳ. Ở cả 5 seed, lượt quét qua vùng đó kết thúc đúng lúc hết mất hình (8,0 s), nên phải chờ lượt sau (khoảng 11,0 s). Khi tắt, gimbal giữ 104°–110° nên thấy lại ngay. Bay thẳng không bị vì mục tiêu ở khoảng −4,5°, nhìn thấy được nửa chu kỳ. Con số 3 s là do trùng pha với độ dài mất hình 8 s; độ trễ thật nằm trong 0–3,3 s tùy pha, chưa đo. Chưa sửa; hướng sửa dự kiến: quét quanh góc dự đoán (khoảng ±25°) hoặc nâng `scan_lo_deg`. Lô này cũng chưa chứng minh bật tìm lại tốt hơn tắt, vì mục tiêu tự hiện lại sau khi hết mất hình.
-- **(d) Bằng chứng còn thiếu.** C8 (pha leo cao) mới có 1 lần leo thật, đạt (5,20 m từ độ cao thấp nhất trong cửa sổ mất hình, mức cho phép 11 m; sau khi đóng đợt độ cao còn lên tới +9,15 m, chưa điều tra), chưa đủ so với kế hoạch (10 m × 3 seed, 20 m × 1 seed). C5 đạt 5/5 seed bay thẳng, nhưng cả 5 lần đều bắt lại đúng lúc hình trở lại nên chưa chứng minh quét tự tìm ra mục tiêu. C9 đạt (3 seed mỗi ô). C2 (phát hiện giả khi COAST không kéo khớp nhảy) vẫn chưa chứng minh trực tiếp.
-- **(e) Bộ bám** mất thời gian TRACK khi có vật gây nhiễu độ tin cậy cao ở mọi khung: 20–29 điểm phần trăm theo 07, khoảng 42–46 điểm theo 08 (còn 327–350/600 khung TRACK); hai cách đo chưa thống nhất. Để sau.
+- **(c) ĐÃ SỬA (2026-11-20, quy tắc S-16): ca bổ nhào, bật tìm lại từng lấy lại hình CHẬM hơn tắt khoảng 3 s.** Sau sửa, lô `srchH1` (bổ nhào 25°, mất hình 8 s, seed 1–5): bật 8,17 s, tắt 8,18 s, chênh −0,006 s (mức đặt ≤ +1,0 s); mất hình 7 s: 7,17 so với 7,22 s; 9 s: 9,19 so với 9,20 s. Hạn chế: cả 14 lần bổ nhào đều ngắn hơn mốc quét 12 s nên khối quét không chạy lần nào; chỉ chứng minh bật không còn làm chậm, không chứng minh quét có ích. Đánh đổi: hình trở lại sau giây 12 có thể trễ tới gần một chu kỳ quét (0,96 s ở ca mất hình 14 s: hình trở lại ở 14,02 s, bám lại ở 14,98 s). Nguyên nhân cũ (giữ làm bằng chứng): ≈ 11,0 s so với ≈ 8,0 s; 5 seed bật, 1 seed tắt, cùng cách đo. Khi đó pha 1 quét góc gimbal cả dải 10°–110° (chu kỳ 3,33 s). Mục tiêu bổ nhào nằm thấp (góc ngẩng khoảng −42° lúc 8 s) nên chỉ lọt khung khi góc gimbal từ khoảng 97–100° trở lên, tức 0,2–0,3 s mỗi chu kỳ. Ở cả 5 seed, lượt quét qua vùng đó kết thúc đúng lúc hết mất hình (8,0 s), nên phải chờ lượt sau (khoảng 11,0 s). Khi tắt, gimbal giữ 104°–110° nên thấy lại ngay. Bay thẳng không bị vì mục tiêu ở khoảng −4,5°, nhìn thấy được nửa chu kỳ. Con số 3 s là do trùng pha với độ dài mất hình 8 s; độ trễ thật nằm trong 0–3,3 s tùy pha, chưa đo. Cách sửa: không quét trong 12 s đầu mà giữ hướng ngắm cuối (S-16). Đã loại: quét theo cửa sổ quanh góc khớp dự đoán, nâng `scan_lo_deg`, giữ tới khi hết bộ nhớ dự đoán 8 s. Lô cũ cũng chưa chứng minh bật tìm lại tốt hơn tắt, vì mục tiêu tự hiện lại sau khi hết mất hình; lô `srchH1` cũng vậy.
+- **(d) Bằng chứng còn thiếu.** C8 (pha leo cao) mới có 1 lần leo thật, đạt (5,20 m từ độ cao thấp nhất trong cửa sổ mất hình, mức cho phép 11 m; sau khi tìm lại độ cao còn tăng tới +20,47 m, đỉnh 53,74 m ở 25,4 s sau lúc mất hình, đúng thiết kế nhưng C8 không bao đoạn này; trần chênh cao khi bám ở xa là quyết định thiết kế còn mở), chưa đủ so với kế hoạch (10 m × 3 seed, 20 m × 1 seed). Lô `srchH1` có thêm 1 lần leo (10 m, mất hình 14 s, seed 1): leo bắt đầu ở 10,6 s, tăng 5,54 m tới lúc tìm lại; vẫn 1 seed. C5 đạt 5/5 seed bay thẳng (và `srchH1`: 3/3 sau 8,16 / 8,18 / 8,20 s), nhưng các lần đều bắt lại đúng lúc hình trở lại hoặc trước mốc quét 12 s nên chưa chứng minh quét tự tìm ra mục tiêu; chưa có ca nào bật tốt hơn tắt. C9 đạt (3 seed mỗi ô). C2 (phát hiện giả khi COAST không kéo khớp nhảy) vẫn chưa chứng minh trực tiếp.
+- **(e) Bộ bám** mất thời gian TRACK khi có vật gây nhiễu độ tin cậy cao ở mọi khung: 20–29 điểm phần trăm theo lần đo độc lập thứ nhất, khoảng 42–46 điểm theo lần thứ hai (còn 327–350/600 khung TRACK); hai cách đo chưa thống nhất. Để sau.
 - **(f) Nhiễu đo gấp đôi:** có 2 lần khoảng cách khoảng 50 m ở đoạn giảm tốc cuối, chưa rõ nguyên nhân.
 - **(g) Tất cả là mô phỏng.** Chưa bay thật, chưa chạy trên Raspberry Pi. Nguồn phát hiện là tổng hợp (có tham số giả định), không phải detector thật.
 
@@ -254,7 +269,7 @@ Lần ĐẠT ở 25 m: mục tiêu ra khỏi khung hình 2 lần, tổng 5,36 gi
 
 Nguyên nhân các lần chưa đạt (điều tra ngày 2026-11-17): khi mất mục tiêu, drone đứng yên thay vì bay tiếp theo vận tốc ước lượng; giới hạn phanh quá thấp; vòng giữ mục tiêu giữa khung đẩy mục tiêu ra mép; gia tốc ngang không đủ khi rẽ ở 20 m/s. Một phần đã sửa trong mã. Lần sửa bộ điều khiển trước đó (kịch bản có rẽ, chưa chạy kịch bản bay thẳng) vẫn cho khoảng cách nhỏ nhất 5,27–5,89 m khi mục tiêu phanh gấp.
 
-Số lần kiểm: `pytest` của `onboard/` cho 1368 passed, 1 xfailed (sau khi thêm khối tìm lại, sổ ghi ngày 2026-11-19; xfailed là ca mục tiêu phanh rồi quay đầu lao lại lúc drone mù, xem rủi ro b; số 810 là của cuối giai đoạn 1). Lô nghiệm thu 3 seed × 2 lần theo kế hoạch cũ (B6b) chưa chạy; đợt D chạy 3 seed × 1 lần.
+Số lần kiểm: `pytest` của `onboard/` cho 1412 passed, 1 xfailed (sau quy tắc S-16, giai đoạn 2b, 2026-11-20; số cũ 1368 passed là của sổ ghi ngày 2026-11-19, trước S-16; xfailed là ca mục tiêu phanh rồi quay đầu lao lại lúc drone mù, xem rủi ro b; số 810 là của cuối giai đoạn 1). Lô nghiệm thu 3 seed × 2 lần theo kế hoạch cũ (B6b) chưa chạy; đợt D chạy 3 seed × 1 lần.
 
 Bảng khả thi tốc độ (chỉ tính toán, không mô phỏng). Nguồn: `onboard/docs/feasibility_speed.md`, tạo bởi `onboard/simtools/feasibility_table.py`. Công thức: khoảng cách an toàn = v·τ + v²/(2a_drone bám) − v²/(2a_mục tiêu) + sai số + 8 m. Giả định τ = 0,35 s và a = 4,1 m/s² lấy từ mô phỏng quad 0,8 kg, **không phải drone thật**. Số bậc FC gốc nằm trong file kết quả thử bậc của mô phỏng (không đưa lên GitHub). Số đo chỉ đến 10 m/s, phần còn lại là ngoại suy.
 
@@ -411,7 +426,7 @@ Lệnh chạy (thay `<repo-wsl>` bằng đường dẫn WSL tới thư mục rep
 # Kiểm không còn mô phỏng nào chạy (mã thoát 1 = không có)
 wsl -d Ubuntu-24.04 -- pgrep arducopter
 
-# Kiểm phần mềm bám (kỳ vọng theo sổ ghi 2026-11-19: 1368 passed, 1 xfailed)
+# Kiểm phần mềm bám (kỳ vọng theo kết quả 2026-11-20: 1412 passed, 1 xfailed; số cũ 1368 là trước S-16)
 wsl -d Ubuntu-24.04 -- bash -lc 'cd <repo-wsl>/onboard && ~/venv-ardupilot/bin/python -m pytest -q'
 
 # Vòng kín khớp chủ động, giữ 15 m, mục tiêu cắm 15°, 10 m/s, seed 1 (mã thoát 0 = đạt)
@@ -448,7 +463,7 @@ Giấy phép và dữ liệu:
 
 - Khoảng cách giữ chính thức (sau cổng B5). Hiện dùng 15 m.
 - Đổi camera mặc định trong mã sang Wide và hiệu chuẩn trên Pi (chưa có kế hoạch).
-- Có nhận giai đoạn 2 với các rủi ro đã biết hay sửa tiếp (rủi ro a, c) trước: chờ chủ dự án.
+- Có nhận giai đoạn 2 với các rủi ro đã biết hay sửa tiếp rủi ro (a) trước: chờ chủ dự án. Rủi ro (c) đã sửa.
 - Cách bám ở tốc độ cao (trên khoảng 14 m/s khi mục tiêu phanh gấp).
 - Tốc độ hành trình 200–250 km/h, sau khi tốc độ tối đa đổi thành 400 km/h.
 - Hai chế độ vận hành (bay tay rồi khóa bám bằng công tắc trên tay điều khiển; khóa từ trạm GCS). Chưa có kế hoạch riêng.

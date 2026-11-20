@@ -259,17 +259,24 @@ class Supervisor:
         vx, vy, vz = hov.vel_ned
         if tracking:
             self.state = SupState.TRACK
+            self._planner.follow(inp.t, inp.gimbal_delta_rad)   # goc khop thuc: quet sau do tiep lien tuc
             scan = None
             why = "search:hold"
         else:
             self.state = SupState.LOST
-            so = self._planner.step(inp.t, own, tick.phase)
+            # S-16: truoc scan_start_s khong quet khop/yaw (scan=None -> gimbal giu last_aim) nhung leo van theo climb_start_s
+            sweep = tick.ep_s >= self._planner.cfg.scan_start_s
+            so = self._planner.step(inp.t, own, tick.phase, sweep)
             if so.vel_ned[2] < 0.0:
                 vz = so.vel_ned[2]
             if so.yaw_rad is not None:
                 self._search_yaw = so.yaw_rad
             self._search_climb = so.climb_m
-            scan = so.scan_delta_rad
+            if sweep:
+                scan = so.scan_delta_rad
+            else:
+                self._planner.follow(inp.t, inp.gimbal_delta_rad)
+                scan = None
             why = so.reason
         if self._last_vz is not None and self._last_t is not None:
             # vz khong nhay qua gioi han gia toc dung (nhu guidance)

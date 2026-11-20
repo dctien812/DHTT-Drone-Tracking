@@ -47,7 +47,7 @@ def status_fn(kind):
 
 
 @functools.lru_cache(maxsize=None)
-def run_trip(kind="A", climb_m=0.0, t_end=13.0):
+def run_trip(kind="A", climb_m=0.0, t_end=13.0, scan_start_s=None):
     """Tra tuple [(t, out, yaw_cmd, vz_cmd)] cho ca chuyen."""
     from dtrack.config import load_profile
     from dtrack.guidance import yaw_from_quat
@@ -57,6 +57,8 @@ def run_trip(kind="A", climb_m=0.0, t_end=13.0):
     cfg = load_profile("search_plane_r15")
     cfg.search.climb_m = climb_m
     cfg.search.climb_start_s = 6.0
+    if scan_start_s is not None:
+        cfg.search.scan_start_s = scan_start_s
     sup = Supervisor(cfg.supervisor, cfg.guidance, cfg.search, cfg.gimbal)
     fn = status_fn(kind)
     yaw = 0.0
@@ -129,12 +131,21 @@ def test_yaw_continuous_when_scan_paused_for_short_track():
 
 @pytest.mark.parametrize("kind", ["A", "B"])
 def test_yaw_continuous_when_episode_closes(kind):
-    rows = run_trip(kind)
+    rows = run_trip(kind, scan_start_s=4.01)   # S-16: scan_start_s sat coast_follow_s => quet ngay pha 1 (dong thoi gian cu); ca dong truoc moc o ngay duoi
     tc = closing_t(rows)
     # truoc dong dot yaw phai khac 0 (neu khong ca nay khong chung minh gi)
     yaw_before = next(y for t, _, y, _ in rows if abs(t - (tc - DT)) < 1e-6)
     assert abs(math.degrees(yaw_before)) > 5.0, "dat gia: yaw quet luc dong dot phai > 5 do, la %.2f" % math.degrees(yaw_before)
     check_yaw(rows, tc - 0.3, tc + 0.5, "dong dot (t=%.2f)" % tc)
+
+
+@pytest.mark.parametrize("kind", ["A", "B"])
+def test_yaw_continuous_when_episode_closes_before_scan_start(kind):
+    """S-16 mac dinh (scan_start_s = 12): ca hai kich ban dong dot o ep_s < 12 (khong quet yaw): yaw lenh van lien tuc."""
+    rows = run_trip(kind)
+    tc = closing_t(rows)
+    assert tc - 1.0 < 12.0
+    check_yaw(rows, tc - 0.3, tc + 0.5, "dong dot truoc moc quet (t=%.2f)" % tc)
 
 
 @pytest.mark.parametrize("kind", ["A", "B"])

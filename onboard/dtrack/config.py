@@ -150,6 +150,7 @@ class SearchConfig:
     climb_scan_lo_deg: float = 70.0    # do, bien duoi dai quet o pha 2 (dai thap)
     yaw_amp_deg: float = 45.0          # do, bien do quet yaw quanh yaw luc bat dau pha 1 (0 = khong quet yaw)
     yaw_rate_dps: float = 20.0         # do/s, toc do quet yaw
+    scan_start_s: float = 12.0         # s, tu COAST dau cua dot: truoc moc nay khong quet khop/yaw (giu huong ngam cuoi), tu moc moi quet (S-16)
 
 
 @dataclass
@@ -287,6 +288,8 @@ def validate(cfg: AppConfig) -> None:
         if not (gm.delta_min_deg <= sr.scan_lo_deg and sr.scan_hi_deg <= gm.delta_max_deg
                 and sr.scan_hi_deg - sr.scan_lo_deg >= 20.0):
             raise ValueError("search.scan_lo_deg/scan_hi_deg phai nam trong dai khop va cach nhau >= 20 do")
+        if not (math.isfinite(sr.scan_start_s) and cf < sr.scan_start_s < sr.total_s):
+            raise ValueError("search.scan_start_s phai trong (supervisor.coast_follow_s, search.total_s)")
         if not (sr.scan_lo_deg <= sr.climb_scan_lo_deg < sr.scan_hi_deg):
             raise ValueError("search.climb_scan_lo_deg phai trong [scan_lo_deg, scan_hi_deg)")
         if not (0.0 <= sr.yaw_amp_deg <= 90.0):

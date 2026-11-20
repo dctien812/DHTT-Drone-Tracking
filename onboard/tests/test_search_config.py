@@ -73,7 +73,7 @@ def test_enabled_requires_gimbal_enabled():
 
 
 @pytest.mark.parametrize("skw,gkw", [
-    ({"total_s": 4.5, "climb_start_s": 4.25}, None),
+    ({"total_s": 4.5, "climb_start_s": 4.25, "scan_start_s": 4.4}, None),   # S-16: coast_follow_s < scan_start_s < total_s
     ({"total_s": 300.0}, None),
     ({"reacquire_hold_s": 0.2}, None),
     ({"reacquire_hold_s": 10.0}, None),
